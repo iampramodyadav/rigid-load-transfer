@@ -57,7 +57,7 @@ server = app.server
 # ---------------------------------------- layout ----------------------------------------
 app.layout = html.Div([
     # html.Div([    
-    html.H1("Rigid Load Transfer Analysis", style={
+    html.H1("Rigid Load Transfer Tool", style={
         'textAlign': 'center', 
         'color': '#2c3e50', 
         'fontFamily': 'Arial', 
