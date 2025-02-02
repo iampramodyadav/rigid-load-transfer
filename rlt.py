@@ -739,8 +739,17 @@ def update_stores_from_file(contents, filename):
     except Exception as e:
         print(f"Error parsing file: {e}")
         return dash.no_update, dash.no_update   
+        
+# Find a free port dynamically
+import socket
+def find_free_port():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("", 0))  # Bind to any available port
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
 if __name__ == '__main__':
     # Use PORT environment variable if available (for cloud deployment)
-    port = int(os.environ.get("PORT", 8050))
-    print(port)
-    app.run_server(debug=False, host='0.0.0.0', port=port)
+    free_port = find_free_port()
+    app.run_server(host="0.0.0.0", port=free_port, debug=False)
+    # app.run_server(debug=False, host='0.0.0.0', port=port)
