@@ -1,0 +1,47 @@
+{
+    "loads": [
+        {
+            "name": "iSys1",
+            "force": [5.0, 10.0, 10.0],
+            "moment": [10.0, 20.0, 15.0],
+            "euler_angles": [30.0, 10.0, 90.0],
+            "rotation_order": "xyz",
+            "translation": [2.0, 4.0, 3.0],
+            "color": {"hex": "#f2ff00"}
+        },
+        {
+            "name": "iSys2",
+            "force": [1.0, 2.0, 3.0],
+            "moment": [20.0, 25.0, 21.0],
+            "euler_angles": [30.0, 90.0, 180.0],
+            "rotation_order": "xyz",
+            "translation": [1.0, 2.0, 3.0],
+            "color": {"hex": "#ff00bb"}
+        },
+        {
+            "name": "iSys3",
+            "force": [0.0, 0.0, 0.0],
+            "moment": [0.0, 0.0, 0.0],
+            "euler_angles": [0.0, 0.0, 0.0],
+            "rotation_order": "xyz",
+            "translation": [4.0, 2.0, 2.0],
+            "color": {"hex": "#f2ff00"}
+        }
+    ],
+    "targets": [
+        {
+            "name": "oSys1",
+            "euler_angles": [10.0, 20.0, 30.0],
+            "rotation_order": "xyz",
+            "translation": [0.0, 0.0, 0.0],
+            "color": {"hex": "#00FF00"}
+        },
+        {
+            "name": "oSys2",
+            "euler_angles": [90.0, 0.0, 0.0],
+            "rotation_order": "xyz",
+            "translation": [-5.0, 0.0, 3.0],
+            "color": {"hex": "#300519"}
+        }
+    ]
+}
