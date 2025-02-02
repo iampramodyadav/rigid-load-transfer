@@ -52,8 +52,8 @@ Designed for mechanical engineers and analysts working with coordinate system tr
 ### Steps
 1. Clone repository:
    ```bash
-   git clone https://github.com/yourusername/rigid-load-transfer-tool.git
-   cd rigid-load-transfer-tool
+   git clone https://github.com/iampramodyadav/rigid-load-transfer.git
+   cd rigid-load-transfer
    ```
 
 2. Install dependencies:
