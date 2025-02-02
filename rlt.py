@@ -1,7 +1,7 @@
 """
 @Author:    Pramod Kumar Yadav
 @email:     pkyadav01234@gmail.com
-@Date:      Feb, 2025
+@Date:      Feb, 2023
 @status:    development
 @PythonVersion: python3
 
@@ -17,25 +17,59 @@ import io
 import plot_3d as plot3d
 import rigid_load_transfer as rlt
 
+# ---------------------------------------- THEMES ----------------------------------------
+PLOT_THEMES = {
+    'default': {
+        'bg_color': 'white',
+        'grid_color': '#E5ECF6',
+        'axis_color': 'black',
+        'text_color': 'black'
+    },
+    'dark': {
+        'bg_color': '#283442',
+        'grid_color': '#3B4754',
+        'axis_color': '#EBF0F8',
+        'text_color': '#EBF0F8'
+    },
+    'minimal': {
+        'bg_color': 'white',
+        'grid_color': '#F5F5F5',
+        'axis_color': '#666666',
+        'text_color': '#666666'
+    },
+    'night': {
+        'bg_color': '#1a1a1a',
+        'grid_color': '#333333',
+        'axis_color': '#999999',
+        'text_color': '#cccccc'
+    },
+    'blueprint': {
+        'bg_color': '#F0F8FF',
+        'grid_color': '#B0C4DE',
+        'axis_color': '#4682B4',
+        'text_color': '#4682B4'
+    }
+}
 # --------------------------------- Initialize Dash app ----------------------------------
 # Initialize Dash app
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 server = app.server
 # ---------------------------------------- layout ----------------------------------------
 app.layout = html.Div([
+    # html.Div([    
     html.H1("Rigid Load Transfer Analysis", style={
         'textAlign': 'center', 
         'color': '#2c3e50', 
         'fontFamily': 'Arial', 
         'marginBottom': '10px'
     }),
-
+    
     dcc.Store(id='loads-store', data=[]),
     dcc.Store(id='targets-store', data=[]),
     dcc.Download(id="download-data"), 
     html.Div([
         html.Div([
-            html.H3("Input Systems", style={'color': '#2980b9'}),
+            # html.H3("Input Systems", style={'color': '#2980b9'}),
             
             dcc.Upload(id='upload-data',
                 children=html.Button('📁 Upload Input File', style={
@@ -87,7 +121,41 @@ app.layout = html.Div([
                 'fontSize': '16px',
                 'marginTop': '10px'
             }),
+         #--------------------------- Simplified theme selector using Plotly templates --------------------------
+            # html.Div([
+            #     html.Label("Select Theme:", style={'marginRight': '10px'}),
+            #     dcc.Dropdown(
+            #         id='theme-selector',
+            #         options=[
+            #             {'label': 'Plotly', 'value': 'plotly'},
+            #             {'label': 'Plotly White', 'value': 'plotly_white'},
+            #             {'label': 'Plotly Dark', 'value': 'plotly_dark'},
+            #             {'label': 'ggplot2', 'value': 'ggplot2'},
+            #             {'label': 'Seaborn', 'value': 'seaborn'},
+            #             {'label': 'Simple White', 'value': 'simple_white'},
+            #             {'label': 'None', 'value': 'none'}
+            #         ],
+            #         value='plotly',
+            #         style={'width': '200px', 'alignItems': 'left',}
+            #     ),
+            # ], style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'})
 
+        # -------------------- Add theme selector --------------------
+            html.Div([
+                html.Label("Plot Theme:", style={'marginRight': '10px'}),
+                dcc.Dropdown(
+                    id='theme-selector',
+                    options=[
+                        {'label': 'Default', 'value': 'default'},
+                        {'label': 'Dark', 'value': 'dark'},
+                        {'label': 'Minimal', 'value': 'minimal'},
+                        {'label': 'Night', 'value': 'night'},
+                        {'label': 'Blueprint', 'value': 'blueprint'}
+                    ], value='default', style={'width': '200px'}
+                )
+            ], style={'display': 'flex','alignItems': 'center','justifyContent': 'flex-end','padding': '10px 20px'
+            }),
+        #---------------------------------------------------------------------------------------------------
         ], style={
             'width': '25%', 
             'padding': '15px',
@@ -113,7 +181,8 @@ app.layout = html.Div([
                 'padding': '10px', 
                 'borderRadius': '10px',
                 'backgroundColor': '#f9f9f9'
-            })
+            }),
+            html.Footer('© 2025 Pramod Kumar Yadav (@iAmPramodYadav)'),
         ], style={'width': '75%', 'height': '80vh',}),
     ], style={'display': 'flex', 'justifyContent': 'space-between', 'gap': '20px', 'padding': '20px'})
 ])
@@ -389,12 +458,16 @@ def update_stores(name,tx, ty, tz, rx, ry, rz,
     [Output('3d-plot', 'figure'),
      Output('results-container', 'children')],
     [Input('loads-store', 'data'),
-     Input('targets-store', 'data')]
+     Input('targets-store', 'data'),
+     Input('theme-selector', 'value')]
 )
-def update_visualization(loads, targets):
+def update_visualization(loads, 
+                         targets, 
+                         # template,
+                         theme):
     fig = go.Figure()
     results = []
-
+    theme_colors = PLOT_THEMES[theme]
     # Add global system
     fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], mode='markers',
                               marker=dict(size=4, color='black'), name='Global'))
@@ -437,8 +510,7 @@ def update_visualization(loads, targets):
                 # Create a slightly lighter version of the load color for the connection line
                 line_color = color  # You can also create a lighter shade if desired  
                 # Add connection line
-                fig.add_trace(plot3d.create_connection_line(load['translation'],target['translation'],line_color)) 
-                
+                fig.add_trace(plot3d.create_connection_line(load['translation'],target['translation'],line_color))
         except Exception as e:
             print(f"Error processing load {i}: {e}")
 
@@ -496,31 +568,82 @@ def update_visualization(loads, targets):
             print(f"Error processing target {i}: {e}")
 
     # Configure plot
+    # Update layout with theme
     fig.update_layout(
+        paper_bgcolor=theme_colors['bg_color'],
+        plot_bgcolor=theme_colors['bg_color'],
         scene=dict(
-            # xaxis=dict(title='X', backgroundcolor='white'),
-            # yaxis=dict(title='Y', backgroundcolor='white'),
-            # zaxis=dict(title='Z', backgroundcolor='white'),
-            xaxis=dict(title='X'),
-            yaxis=dict(title='Y'),
-            zaxis=dict(title='Z'),
+            xaxis=dict(
+                title='X',
+                backgroundcolor=theme_colors['bg_color'],
+                gridcolor=theme_colors['grid_color'],
+                showbackground=True,
+                zerolinecolor=theme_colors['grid_color'],
+                color=theme_colors['text_color']
+            ),
+            yaxis=dict(
+                title='Y',
+                backgroundcolor=theme_colors['bg_color'],
+                gridcolor=theme_colors['grid_color'],
+                showbackground=True,
+                zerolinecolor=theme_colors['grid_color'],
+                color=theme_colors['text_color']
+            ),
+            zaxis=dict(
+                title='Z',
+                backgroundcolor=theme_colors['bg_color'],
+                gridcolor=theme_colors['grid_color'],
+                showbackground=True,
+                zerolinecolor=theme_colors['grid_color'],
+                color=theme_colors['text_color']
+            ),
             aspectmode='cube',
             camera=dict(up=dict(x=0, y=0, z=1))
         ),
         margin=dict(l=0, r=0, b=0, t=30),
         showlegend=True,
-        scene_aspectmode='data'
+        scene_aspectmode='data',
+        font=dict(color=theme_colors['text_color'])
     )
+    dark_templates = ['dark','night']
+    is_dark = theme in dark_templates 
+    # # ----------------------------------------------------------
+    # # Update layout with Plotly template
+    # fig.update_layout(
+    #     template=template,  # Use the selected Plotly template
+    #     scene=dict(
+    #         xaxis=dict(title='X'),
+    #         yaxis=dict(title='Y'),
+    #         zaxis=dict(title='Z'),
+    #         aspectmode='cube',
+    #         camera=dict(up=dict(x=0, y=0, z=1))
+    #     ),
+    #     margin=dict(l=0, r=0, b=0, t=30),
+    #     showlegend=True,
+    #     scene_aspectmode='data'
+    # )
 
-    # Create results table
+    # Create results table with styling based on template
+    # dark_templates = ['plotly_dark']
+    # is_dark = template in dark_templates
+    # # ----------------------------------------------------------
     table = dash_table.DataTable(
         columns=[{'name': col, 'id': col} for col in ['System', 'Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz']],
         data=results,
-        style_cell={'textAlign': 'center', 'padding': '5px'},
-        style_header={'backgroundColor': 'lightgrey', 'fontWeight': 'bold'},
+        style_cell={
+            'textAlign': 'center',
+            'padding': '5px',
+            'backgroundColor': '#283442' if is_dark else 'white',
+            'color': 'white' if is_dark else 'black'
+        },
+        style_header={
+            'backgroundColor': '#3B4754' if is_dark else 'lightgrey',
+            'fontWeight': 'bold',
+            'color': 'white' if is_dark else 'black'
+        },
         style_data_conditional=[{
             'if': {'row_index': 'odd'},
-            'backgroundColor': 'rgb(248, 248, 248)'
+            'backgroundColor': '#3B4754' if is_dark else 'rgb(248, 248, 248)'
         }]
     )
 
@@ -614,7 +737,6 @@ def update_stores_from_file(contents, filename):
             raise ValueError("Unsupported file format")
     except Exception as e:
         print(f"Error parsing file: {e}")
-        return dash.no_update, dash.no_update
-        
+        return dash.no_update, dash.no_update   
 if __name__ == '__main__':
     app.run_server(debug=True, use_reloader=False)
