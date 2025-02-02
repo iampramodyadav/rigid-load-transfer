@@ -1,0 +1,74 @@
+/com, ------------------------------------------------
+/com, RLT_JSON_GEN.MAC - ANSYS APDL Macro
+/com, Generates JSON input for Rigid Load Transfer Tool
+/com, Usage: RLT_JSON_GEN, ARG1, ARG2
+/com,   ARG1: Array of load system CSYS IDs
+/com,   ARG2: Array of target system CSYS IDs
+/com, ------------------------------------------------
+
+/prep7
+
+*del, load_csys,, nopr
+*del, target_csys,, nopr
+*dim, load_csys, array, %arg1%
+*dim, target_csys, array, %arg2%
+
+*get, num_load, parm, load_csys, dim, x
+*get, num_target, parm, target_csys, dim, x
+
+/com, Initialize JSON structure
+*cfopen, rlt_input, json
+*cfwrite, {
+*cfwrite,   "loads": [
+*do, i, 1, num_load
+    csys, load_csys(i)
+    *get, x, csys, load_csys(i), loc, x
+    *get, y, csys, load_csys(i), loc, y
+    *get, z, csys, load_csys(i), loc, z
+    *get, rx, csys, load_csys(i), ang, x
+    *get, ry, csys, load_csys(i), ang, y
+    *get, rz, csys, load_csys(i), ang, z
+
+    *cfwrite,     {
+    *cfwrite,       "name": "Load System %i%",
+    *cfwrite,       "force": [0.0, 0.0, 0.0],
+    *cfwrite,       "moment": [0.0, 0.0, 0.0],
+    *cfwrite,       "euler_angles": [%rx%, %ry%, %rz%],
+    *cfwrite,       "rotation_order": "xyz",
+    *cfwrite,       "translation": [%x%, %y%, %z%],
+    *cfwrite,       "color": {"hex": "#%i%0000"}
+    *if, i, lt, num_load, then
+        *cfwrite,     },
+    *else
+        *cfwrite,     }
+    *endif
+*enddo
+*cfwrite,   ],
+*cfwrite,   "targets": [
+*do, i, 1, num_target
+    csys, target_csys(i)
+    *get, x, csys, target_csys(i), loc, x
+    *get, y, csys, target_csys(i), loc, y
+    *get, z, csys, target_csys(i), loc, z
+    *get, rx, csys, target_csys(i), ang, x
+    *get, ry, csys, target_csys(i), ang, y
+    *get, rz, csys, target_csys(i), ang, z
+
+    *cfwrite,     {
+    *cfwrite,       "name": "Target System %i%",
+    *cfwrite,       "euler_angles": [%rx%, %ry%, %rz%],
+    *cfwrite,       "rotation_order": "xyz",
+    *cfwrite,       "translation": [%x%, %y%, %z%],
+    *cfwrite,       "color": {"hex": "#00%i%00"}
+    *if, i, lt, num_target, then
+        *cfwrite,     },
+    *else
+        *cfwrite,     }
+    *endif
+*enddo
+*cfwrite,   ]
+*cfwrite, }
+*cfclose
+
+/com, JSON file saved as 'rlt_input.json'
+/com, ------------------------------------------------
