@@ -72,3 +72,77 @@
 
 /com, JSON file saved as 'rlt_input.json'
 /com, ------------------------------------------------
+
+! ! Define coordinate systems
+! local, 11, 0, 1.0, 2.0, 3.0, 30, 45, 60  ! Load System 1
+! local, 12, 0, 2.0, 3.0, 4.0, 45, 60, 90  ! Load System 2
+! local, 21, 0, 5.0, 6.0, 7.0, 0, 0, 0     ! Target System 1
+
+! ! Define arrays for load and target systems
+! *dim, load_csys, array, 2
+! load_csys(1) = 11
+! load_csys(2) = 12
+
+! *dim, target_csys, array, 1
+! target_csys(1) = 21
+
+! ! Run the macro
+! RLT_JSON_GEN, load_csys, target_csys
+
+
+! {
+  ! "loads": [
+    ! {
+      ! "name": "Load System 1",
+      ! "force": [0.0, 0.0, 0.0],
+      ! "moment": [0.0, 0.0, 0.0],
+      ! "euler_angles": [30.0, 45.0, 60.0],
+      ! "rotation_order": "xyz",
+      ! "translation": [1.0, 2.0, 3.0],
+      ! "color": {"hex": "#10000"}
+    ! },
+    ! {
+      ! "name": "Load System 2",
+      ! "force": [0.0, 0.0, 0.0],
+      ! "moment": [0.0, 0.0, 0.0],
+      ! "euler_angles": [45.0, 60.0, 90.0],
+      ! "rotation_order": "xyz",
+      ! "translation": [2.0, 3.0, 4.0],
+      ! "color": {"hex": "#20000"}
+    ! }
+  ! ],
+  ! "targets": [
+    ! {
+      ! "name": "Target System 1",
+      ! "euler_angles": [0.0, 0.0, 0.0],
+      ! "rotation_order": "xyz",
+      ! "translation": [5.0, 6.0, 7.0],
+      ! "color": {"hex": "#00100"}
+    ! }
+  ! ]
+! }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
