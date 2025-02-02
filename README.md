@@ -178,7 +178,7 @@ Designed for mechanical engineers and analysts working with coordinate system tr
 
 ## Troubleshooting <a name="troubleshooting"></a>
 ### Common Issues
-**Problem**: ~~Input fields clear when empty~~ 
+**Problem**: ~~Input fields clear when empty~~  
 **Solution**: Enter 0 instead of leaving fields blank
 
 **Problem**: File upload errors  
