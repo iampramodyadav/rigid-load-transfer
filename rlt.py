@@ -374,9 +374,9 @@ def update_stores(name,tx, ty, tz, rx, ry, rz,
                 
                 # Get the corresponding value from the triggered input
                 value = ctx.triggered[trigger_idx]['value']
-                # Handle null/empty values for numeric inputs
-                if value_type in ['tx', 'ty', 'tz', 'rx', 'ry', 'rz', 'fx', 'fy', 'fz', 'mx', 'my', 'mz']:
-                    value = 0.0 if value is None or value == '' else float(value)
+                # # Handle null/empty values for numeric inputs
+                # if value_type in ['tx', 'ty', 'tz', 'rx', 'ry', 'rz', 'fx', 'fy', 'fz', 'mx', 'my', 'mz']:
+                    # value = 0.0 if value is None or value == '' else float(value)
                 # input_values[input_type][index][value_type] = value
                 input_values[input_type][index][value_type] = value
                 
