@@ -741,7 +741,7 @@ def update_stores_from_file(contents, filename):
         return dash.no_update, dash.no_update   
         
 # Find a free port dynamically
-
+import webbrowser  # Add this line
 import socket
 def find_free_port():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -750,7 +750,13 @@ def find_free_port():
     sock.close()
     return port
 if __name__ == '__main__':
-    # Use PORT environment variable if available (for cloud deployment)
-    free_port = find_free_port()
-    app.run_server(host="0.0.0.0", port=free_port, debug=False)
-    # app.run_server(debug=False, host='0.0.0.0', port=port)
+    # Use PORT from environment (for deployment) or find a free port locally
+    port = int(os.environ.get("PORT", find_free_port()))
+    
+    # Open browser ONLY if running locally (not in production)
+    if os.environ.get("PORT") is None:
+        url = f"http://localhost:{port}"
+        webbrowser.open_new(url)  # Open browser before starting the server
+    
+    # Start the server
+    app.run_server(host="0.0.0.0", port=port, debug=False)
