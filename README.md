@@ -1,7 +1,7 @@
 # rigid-load-transfer
 # Rigid Load Transfer Analysis Tool Documentation
 
-![Demo](https://via.placeholder.com/800x400.png?text=3D+Visualization+Demo)  
+![Demo](https://github.com/iampramodyadav/rigid-load-transfer/blob/main/rlt.png)  
 *A web-based tool for analyzing load transfer between coordinate systems with 3D visualization*
 
 ## Table of Contents
@@ -72,7 +72,7 @@ Designed for mechanical engineers and analysts working with coordinate system tr
 
 ## Usage Guide <a name="usage-guide"></a>
 ### Interface Overview
-![UI Layout](https://via.placeholder.com/600x300.png?text=Interface+Layout)
+![UI Layout](https://github.com/iampramodyadav/rigid-load-transfer/blob/main/rlt.png)
 
 1. **Input Panel (Left)**
    - Add/configure load/target systems
