@@ -13,6 +13,7 @@ import numpy as np
 import json
 import base64
 import io
+import os
 # import dash_daq as daq
 import plot_3d as plot3d
 import rigid_load_transfer as rlt
@@ -739,4 +740,7 @@ def update_stores_from_file(contents, filename):
         print(f"Error parsing file: {e}")
         return dash.no_update, dash.no_update   
 if __name__ == '__main__':
-    app.run_server(debug=True, use_reloader=False)
+    # Use PORT environment variable if available (for cloud deployment)
+    port = int(os.environ.get("PORT", 8050))
+    print(port)
+    app.run_server(debug=False, host='0.0.0.0', port=port)
