@@ -1,5 +1,5 @@
 # rigid-load-transfer
-# Rigid Load Transfer Analysis Tool Documentation
+# Rigid Load Transfer Tool Documentation
 
 ![Demo](https://github.com/iampramodyadav/rigid-load-transfer/blob/main/rlt.png)  
 *A web-based tool for analyzing load transfer between coordinate systems with 3D visualization*
@@ -178,7 +178,7 @@ Designed for mechanical engineers and analysts working with coordinate system tr
 
 ## Troubleshooting <a name="troubleshooting"></a>
 ### Common Issues
-**Problem**: Input fields clear when empty  
+**Problem**: ~~Input fields clear when empty~~ 
 **Solution**: Enter 0 instead of leaving fields blank
 
 **Problem**: File upload errors  
