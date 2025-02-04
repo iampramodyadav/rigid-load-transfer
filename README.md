@@ -193,8 +193,8 @@ Designed for mechanical engineers and analysts working with coordinate system tr
 ---
 
 ## License <a name="license"></a>
-GNU GENERAL PUBLIC LICENSE
-Copyright © 2024 Pramod Kumar Yadav
+MIT LICENSE
+Copyright © 2025 Pramod Kumar Yadav
 
 **Contact**: [pkyadav01234@gmail.com](mailto:pkyadav01234@gmail.com)
 
