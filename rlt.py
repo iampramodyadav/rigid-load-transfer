@@ -67,6 +67,7 @@ app.layout = html.Div([
     
     dcc.Store(id='loads-store', data=[]),
     dcc.Store(id='targets-store', data=[]),
+    dcc.Store(id='gravity-store', data={'value': 9.81, 'direction': [0, 0, -1]}),
     dcc.Download(id="download-data"), 
     html.Div([
         html.Div([
@@ -84,6 +85,21 @@ app.layout = html.Div([
                     'fontSize': '16px',
                     'marginBottom': '10px'
                 }),multiple=False,),
+            
+            # Gravity settings
+            html.Div([
+                html.H4("Gravity Settings", style={'marginBottom': '5px'}),
+                html.Div([
+                    html.Label("Gravity Value (m/s²):"),
+                    dcc.Input(id='gravity-value', type='number', value=9.81, style={'width': '80px'})
+                ], style={'marginBottom': '5px'}),
+                html.Div([
+                    html.Label("Gravity Direction (X,Y,Z):"),
+                    dcc.Input(id='gravity-x', type='number', value=0, style={'width': '50px'}),
+                    dcc.Input(id='gravity-y', type='number', value=0, style={'width': '50px'}),
+                    dcc.Input(id='gravity-z', type='number', value=-1, style={'width': '50px'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '5px', 'marginBottom': '10px'})
+            ], style={'padding': '10px', 'backgroundColor': '#f5f5f5', 'borderRadius': '5px', 'marginBottom': '10px'}),
                        
             html.Button('➕ Add Load System', id='add-load-btn', n_clicks=0, style={
                 'width': '100%', 
@@ -188,6 +204,27 @@ app.layout = html.Div([
     ], style={'display': 'flex', 'justifyContent': 'space-between', 'gap': '20px', 'padding': '20px'})
 ])
 # ---------------------------------------- Callbacks ----------------------------------------
+# Callback for gravity settings
+@app.callback(
+    Output('gravity-store', 'data'),
+    [Input('gravity-value', 'value'),
+     Input('gravity-x', 'value'),
+     Input('gravity-y', 'value'),
+     Input('gravity-z', 'value')],
+    prevent_initial_call=True
+)
+def update_gravity_settings(gravity_value, gx, gy, gz):
+    # Normalize direction vector
+    direction = np.array([gx, gy, gz])
+    norm = np.linalg.norm(direction)
+    if norm > 0:
+        direction = direction / norm
+    
+    return {
+        'value': gravity_value if gravity_value is not None else 9.81,
+        'direction': direction.tolist()
+    }
+
 # Callbacks for adding systems
 @app.callback(
     Output('loads-store', 'data'),
@@ -203,7 +240,9 @@ def add_load_system(n_clicks, data):
         'euler_angles': [0.0, 0.0, 0.0],
         'rotation_order': 'xyz',
         'translation': [0.0, 0.0, 0.0],
-        'color': {'hex': f'#{np.random.randint(0, 0xFFFFFF):06x}'}
+        'color': {'hex': f'#{np.random.randint(0, 0xFFFFFF):06x}'},
+        'mass': 0.0,
+        'cog': [0.0, 0.0, 0.0]
     }
     return data + [new_load]
 
@@ -292,7 +331,7 @@ def update_input_components(loads, targets):
                     html.Hr(),
                         
                     html.Div([
-                        html.Label("Force (X,Y,Z):"),
+                        html.Label("Force L(X,Y,Z):"),
                         dcc.Input(value=item.get('force', [0,0,0])[0], type='number',
                                  id={'type': 'fx', 'index': i, 'input-type': input_type}, style={'width': '50px'}),
                         dcc.Input(value=item.get('force', [0,0,0])[1], type='number',
@@ -302,14 +341,38 @@ def update_input_components(loads, targets):
                     ], className='input-group', style={'display': 'flex', 'alignItems': 'center', 'gap': '5px'}) if input_type == 'load' else html.Div(hidden=True),
                         
                     html.Div([
-                        html.Label("Moment (X,Y,Z):"),
+                        html.Label("Moment L(X,Y,Z):"),
                         dcc.Input(value=item.get('moment', [0,0,0])[0], type='number',
                                  id={'type': 'mx', 'index': i, 'input-type': input_type},style={'width': '50px'}),
                         dcc.Input(value=item.get('moment', [0,0,0])[1], type='number',
                                  id={'type': 'my', 'index': i, 'input-type': input_type},style={'width': '50px'}),
                         dcc.Input(value=item.get('moment', [0,0,0])[2], type='number',
                                  id={'type': 'mz', 'index': i, 'input-type': input_type},style={'width': '50px'}),
-                    ], className='input-group', style={'display': 'flex', 'alignItems': 'center', 'gap': '5px'}) if input_type == 'load' else html.Div(hidden=True)
+                    ], className='input-group', style={'display': 'flex', 'alignItems': 'center', 'gap': '5px'}) if input_type == 'load' else html.Div(hidden=True),
+                    html.Hr(),
+                   # Mass and COG inputs for load systems
+                    html.Div([
+                        html.Div([
+                            html.Label("Mass (kg):"),
+                            dcc.Input(value=item.get('mass', 0), type='number',
+                                     id={'type': 'mass', 'index': i, 'input-type': input_type},
+                                     style={'width': '80px'})
+                        ], style={'marginBottom': '5px'}),
+
+                        html.Div([
+                            html.Label("CoG L(X,Y,Z):"),
+                            dcc.Input(value=item.get('cog', [0,0,0])[0], type='number',
+                                     id={'type': 'cog-x', 'index': i, 'input-type': input_type},
+                                     style={'width': '50px'}),
+                            dcc.Input(value=item.get('cog', [0,0,0])[1], type='number',
+                                     id={'type': 'cog-y', 'index': i, 'input-type': input_type},
+                                     style={'width': '50px'}),
+                            dcc.Input(value=item.get('cog', [0,0,0])[2], type='number',
+                                     id={'type': 'cog-z', 'index': i, 'input-type': input_type},
+                                     style={'width': '50px'})
+                        ], style={'display': 'flex', 'alignItems': 'center', 'gap': '5px'})
+                    ], style={'marginBottom': '10px'}) if input_type == 'load' else html.Div(hidden=True),
+
                 ], style={
                     'border': f'2px solid {system_color}',
                     'borderRadius': '8px',
@@ -339,13 +402,19 @@ def update_input_components(loads, targets):
      Input({'type': 'mx', 'index': ALL, 'input-type': ALL}, 'value'),
      Input({'type': 'my', 'index': ALL, 'input-type': ALL}, 'value'),
      Input({'type': 'mz', 'index': ALL, 'input-type': ALL}, 'value'),
+     Input({'type': 'mass', 'index': ALL, 'input-type': ALL}, 'value'),
+     Input({'type': 'cog-x', 'index': ALL, 'input-type': ALL}, 'value'),
+     Input({'type': 'cog-y', 'index': ALL, 'input-type': ALL}, 'value'),
+     Input({'type': 'cog-z', 'index': ALL, 'input-type': ALL}, 'value'),
      Input({'type': 'rot-order', 'index': ALL, 'input-type': ALL}, 'value')],
     [State('loads-store', 'data'),
      State('targets-store', 'data')],
     prevent_initial_call=True
 )
-def update_stores(name,tx, ty, tz, rx, ry, rz, 
-                 fx, fy, fz, mx, my, mz, rot_orders,
+def update_stores(name, tx, ty, tz, rx, ry, rz, 
+                 fx, fy, fz, mx, my, mz, 
+                 mass, cog_x, cog_y, cog_z,
+                 rot_orders,
                  loads, targets):
     ctx = dash.callback_context
     if not ctx.triggered:
@@ -423,6 +492,18 @@ def update_stores(name,tx, ty, tz, rx, ry, rz,
                     vals.get('mz', loads[i]['moment'][2])
                 ]
             
+            # Update mass
+            if 'mass' in vals:
+                loads[i]['mass'] = vals['mass']
+                
+            # Update center of gravity
+            if any(k in vals for k in ['cog-x', 'cog-y', 'cog-z']):
+                loads[i]['cog'] = [
+                    vals.get('cog-x', loads[i].get('cog', [0,0,0])[0]),
+                    vals.get('cog-y', loads[i].get('cog', [0,0,0])[1]),
+                    vals.get('cog-z', loads[i].get('cog', [0,0,0])[2])
+                ]
+            
             # Update rotation order
             if 'rot-order' in vals:
                 loads[i]['rotation_order'] = vals['rot-order']
@@ -460,11 +541,12 @@ def update_stores(name,tx, ty, tz, rx, ry, rz,
      Output('results-container', 'children')],
     [Input('loads-store', 'data'),
      Input('targets-store', 'data'),
+     Input('gravity-store', 'data'),
      Input('theme-selector', 'value')]
 )
 def update_visualization(loads, 
-                         targets, 
-                         # template,
+                         targets,
+                         gravity,
                          theme):
     fig = go.Figure()
     results = []
@@ -472,6 +554,21 @@ def update_visualization(loads,
     # Add global system
     fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[0], mode='markers',
                               marker=dict(size=4, color='black'), name='Global'))
+
+    # Add gravity vector
+    gravity_value = gravity.get('value', 9.81)
+    gravity_dir = np.array(gravity.get('direction', [0, 0, -1]))
+    gravity_vec = gravity_value * gravity_dir
+    
+    # Add gravity vector to plot
+    fig.add_trace(go.Scatter3d(
+        x=[0, gravity_dir[0]], 
+        y=[0, gravity_dir[1]], 
+        z=[0, gravity_dir[2]],
+        mode='lines',
+        line=dict(color='purple', width=5),
+        name=f'Gravity: {gravity_value} m/s²'
+    ))
 
     # Process loads
     for i, load in enumerate(loads):
@@ -499,11 +596,11 @@ def update_visualization(loads,
 
             # Add vectors
             if 'force' in load:
-                fig_force = plot3d.create_vector(pos, R @ load['force'], color, f'Force:{load['force']}', legendgroup= f'force_group{i}',triad_name = f"{load_name}:Force")
+                fig_force = plot3d.create_vector(pos, R @ load['force'], color, f'Force:{load["force"]}', legendgroup= f'force_group{i}',triad_name = f"{load_name}:Force")
                 fig = go.Figure(data = fig.data + fig_force.data)
             if 'moment' in load:
                 # fig.add_trace(create_vector(pos, R @ load['moment'], color, f'Load {i+1} Moment'))
-                fig_mom  = plot3d.create_vector(pos, R @ load['moment'], color, f'Moment:{load['moment']}', legendgroup= f'force_group{i}',triad_name = f"{load_name}:Moment")
+                fig_mom  = plot3d.create_vector(pos, R @ load['moment'], color, f'Moment:{load["moment"]}', legendgroup= f'force_group{i}',triad_name = f"{load_name}:Moment")
                 fig = go.Figure(data = fig.data + fig_mom.data)
                 
             # Add connection lines to all targets
@@ -549,8 +646,39 @@ def update_visualization(loads,
                     load['rotation_order'],
                     load['translation']
                 )
+                
+                # Calculate gravity force if mass is present
+                gravity_force = np.zeros(3)
+                if 'mass' in load and load['mass'] > 0:
+                    # Get center of gravity or use load position if not specified
+                    cog = np.array(load.get('cog', [0, 0, 0]))
+                    if np.all(cog == 0):  # If COG is not specified, use load position
+                        cog = load['translation']
+                    else:
+                        # COG is specified relative to load coordinate system, transform to global
+                        cog = load['translation'] + R_load @ cog
+                        
+                    # Calculate gravity force in global coordinates
+                    gravity_force_global = load['mass'] * gravity_value * gravity_dir
+                    
+                    # Transform gravity force from global to load coordinate system
+                    gravity_force = R_load.T @ gravity_force_global
+                    
+                    # Add gravity force vector to plot at COG position
+                    fig.add_trace(go.Scatter3d(
+                        x=[cog[0], cog[0] + gravity_dir[0]],
+                        y=[cog[1], cog[1] + gravity_dir[1]],
+                        z=[cog[2], cog[2] + gravity_dir[2]],
+                        mode='lines',
+                        line=dict(color='red', width=3, dash='dot'),
+                        name=f'{load_name}: Gravity Force ({load["mass"]} kg)'
+                    ))
+                
+                # Add gravity force to load force
+                load_force = np.array(load.get('force', [0, 0, 0])) + gravity_force
+                
                 F, M = rlt.rigid_load_transfer(
-                    np.array(load['force']),
+                    load_force,
                     np.array(load['moment']),
                     R_load, pos_load,
                     R_target, pos_target
@@ -675,6 +803,10 @@ def export_data(n_clicks, loads, targets, results):
         content += f"  Euler Angles (deg): {load['euler_angles']}\n"
         content += f"  Force (X,Y,Z): {load['force']}\n"
         content += f"  Moment (X,Y,Z): {load['moment']}\n"
+        if 'mass' in load:
+            content += f"  Mass: {load['mass']} kg\n"
+        if 'cog' in load:
+            content += f"  Center of Gravity (X,Y,Z): {load['cog']}\n"
         content += f"  Color: {load['color']['hex']}\n\n"
     
     # Add targets information
@@ -740,23 +872,6 @@ def update_stores_from_file(contents, filename):
         print(f"Error parsing file: {e}")
         return dash.no_update, dash.no_update   
         
-# Find a free port dynamically
-import webbrowser  # Add this line
-import socket
-def find_free_port():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("", 0))  # Bind to any available port
-    port = sock.getsockname()[1]
-    sock.close()
-    return port
+
 if __name__ == '__main__':
-    # Use PORT from environment (for deployment) or find a free port locally
-    port = int(os.environ.get("PORT", find_free_port()))
-    
-    # Open browser ONLY if running locally (not in production)
-    if os.environ.get("PORT") is None:
-        url = f"http://localhost:{port}"
-        webbrowser.open_new(url)  # Open browser before starting the server
-    
-    # Start the server
-    app.run_server(host="0.0.0.0", port=port, debug=False)
+    app.run_server(debug=True)
