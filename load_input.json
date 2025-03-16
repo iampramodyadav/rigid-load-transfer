@@ -7,6 +7,8 @@
             "euler_angles": [30.0, 10.0, 90.0],
             "rotation_order": "xyz",
             "translation": [2.0, 4.0, 3.0],
+            "mass":10,
+            "cog":[0.1,0.02,0.003],
             "color": {"hex": "#f2ff00"}
         },
         {
