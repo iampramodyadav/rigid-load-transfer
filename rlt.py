@@ -602,7 +602,26 @@ def update_visualization(loads,
                 # fig.add_trace(create_vector(pos, R @ load['moment'], color, f'Load {i+1} Moment'))
                 fig_mom  = plot3d.create_vector(pos, R @ load['moment'], color, f'Moment:{load["moment"]}', legendgroup= f'force_group{i}',triad_name = f"{load_name}:Moment")
                 fig = go.Figure(data = fig.data + fig_mom.data)
-                
+            
+            # Add gravity force vector to plot at COG position
+            if 'mass' in load and load['mass'] > 0:
+                                    # Get center of gravity or use load position if not specified
+                cog = np.array(load.get('cog', [0, 0, 0]))
+                if np.all(cog == 0):  # If COG is not specified, use load position
+                    cog = load['translation']
+                else:
+                    # COG is specified relative to load coordinate system, transform to global
+                    cog = load['translation'] + R @ cog
+
+                fig.add_trace(go.Scatter3d(
+                    x=[cog[0], cog[0] + gravity_dir[0]],
+                    y=[cog[1], cog[1] + gravity_dir[1]],
+                    z=[cog[2], cog[2] + gravity_dir[2]],
+                    mode='lines',
+                    line=dict(color=color, width=3, dash='dot'),
+                    name=f'{load_name}: Gravity Force ({load["mass"]} kg)'
+                ))
+
             # Add connection lines to all targets
             for j, target in enumerate(targets):
                 # Create a slightly lighter version of the load color for the connection line
@@ -649,37 +668,30 @@ def update_visualization(loads,
                 
                 # Calculate gravity force if mass is present
                 gravity_force = np.zeros(3)
+                gravity_moment = np.zeros(3)
+
                 if 'mass' in load and load['mass'] > 0:
                     # Get center of gravity or use load position if not specified
-                    cog = np.array(load.get('cog', [0, 0, 0]))
-                    if np.all(cog == 0):  # If COG is not specified, use load position
-                        cog = load['translation']
+                    cogL = np.array(load.get('cog', [0, 0, 0]))
+                    if np.all(cogL == 0):  # If COG is not specified, use load position
+                        cogg = load['translation']
                     else:
                         # COG is specified relative to load coordinate system, transform to global
-                        cog = load['translation'] + R_load @ cog
+                        cogg = load['translation'] + R_load @ cogL
                         
                     # Calculate gravity force in global coordinates
                     gravity_force_global = load['mass'] * gravity_value * gravity_dir
-                    
                     # Transform gravity force from global to load coordinate system
-                    gravity_force = R_load.T @ gravity_force_global
-                    
-                    # Add gravity force vector to plot at COG position
-                    fig.add_trace(go.Scatter3d(
-                        x=[cog[0], cog[0] + gravity_dir[0]],
-                        y=[cog[1], cog[1] + gravity_dir[1]],
-                        z=[cog[2], cog[2] + gravity_dir[2]],
-                        mode='lines',
-                        line=dict(color='red', width=3, dash='dot'),
-                        name=f'{load_name}: Gravity Force ({load["mass"]} kg)'
-                    ))
-                
+                    R_loadg, pos_loadg = rlt.create_rotation_matrix(np.radians(load['euler_angles']),load['rotation_order'],cogg)
+                    gravity_force = R_loadg.T @ gravity_force_global
+                    gravity_moment = np.cross(cogL, gravity_force_global)
                 # Add gravity force to load force
                 load_force = np.array(load.get('force', [0, 0, 0])) + gravity_force
-                
+                load_moment = np.array(load.get('moment', [0, 0, 0])) + gravity_moment
+
                 F, M = rlt.rigid_load_transfer(
                     load_force,
-                    np.array(load['moment']),
+                    load_moment,
                     R_load, pos_load,
                     R_target, pos_target
                 )
