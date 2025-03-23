@@ -14,6 +14,7 @@ import json
 import base64
 import io
 import os
+import re
 # import dash_daq as daq
 import plot_3d as plot3d
 import rigid_load_transfer as rlt
@@ -127,17 +128,32 @@ app.layout = html.Div([
             html.Div(id='target-inputs-container', style={'marginTop': '10px'}),
             
             # Add the export button to your layout (in the input systems section)
-            html.Button('💾 Export Data', id='export-btn', style={
-                'width': '100%', 
-                'backgroundColor': '#3498db', 
-                'color': 'white',
-                'border': 'none',
-                'padding': '10px',
-                'borderRadius': '5px',
-                'cursor': 'pointer',
-                'fontSize': '16px',
-                'marginTop': '10px'
-            }),
+            html.Div([
+                html.Hr(style={'border': '1px solid #ccc', 'marginTop': '10px'}),
+                html.Div([
+                    dcc.RadioItems(
+                        id='export-format',
+                        options=[
+                            {'label': 'Classic Format (loads/targets)', 'value': 'classic'},
+                            {'label': 'New Format (nodes/edges)', 'value': 'new'},
+                            {'label': 'Auto Detect', 'value': 'auto'}
+                        ],
+                        value='auto',
+                        labelStyle={'display': 'block', 'marginBottom': '5px'},
+                        style={'marginBottom': '10px'}
+                    ),
+                ], style={'marginBottom': '10px'}),
+                html.Button('💾 Export Data', id='export-btn', style={
+                    'width': '100%', 
+                    'backgroundColor': '#3498db', 
+                    'color': 'white',
+                    'border': 'none',
+                    'padding': '10px',
+                    'borderRadius': '5px',
+                    'cursor': 'pointer',
+                    'fontSize': '16px'
+                }),
+            ], style={'marginTop': '10px'}),
          #--------------------------- Simplified theme selector using Plotly templates --------------------------
             # html.Div([
             #     html.Label("Select Theme:", style={'marginRight': '10px'}),
@@ -203,6 +219,45 @@ app.layout = html.Div([
         ], style={'width': '75%', 'height': '80vh',}),
     ], style={'display': 'flex', 'justifyContent': 'space-between', 'gap': '20px', 'padding': '20px'})
 ])
+
+
+# Function to format JSON with compact arrays
+def format_json_compact_arrays(json_str):
+    """
+    Formats JSON string to make arrays more compact and readable.
+    
+    Args:
+        json_str (str): JSON string to format
+        
+    Returns:
+        str: Formatted JSON string with compact arrays
+        
+    The function:
+    1. Identifies array patterns in the JSON
+    2. Compacts multi-line arrays into single lines
+    3. Preserves proper indentation for objects
+    """
+    # Use regex to find arrays and compact them
+    # This pattern looks for array patterns with newlines and extra spaces
+    pattern = r'\[\s*\n\s*([^][]*?)\s*\n\s*\]'
+    
+    # Function to process each match
+    def compact_array(match):
+        # Get the content of the array
+        content = match.group(1)
+        # Split by comma and newline, then clean each element
+        elements = re.split(r',\s*\n\s*', content)
+        elements = [elem.strip() for elem in elements]
+        # Rejoin with comma and space
+        return f"[{', '.join(elements)}]"
+    
+    # Apply the pattern repeatedly until no more changes
+    prev_json = ""
+    while prev_json != json_str:
+        prev_json = json_str
+        json_str = re.sub(pattern, compact_array, json_str, flags=re.DOTALL)
+    
+    return json_str
 # ---------------------------------------- Callbacks ----------------------------------------
 # Callback for gravity settings
 @app.callback(
@@ -795,70 +850,138 @@ def update_visualization(loads,
     Input('export-btn', 'n_clicks'),
     [State('loads-store', 'data'),
      State('targets-store', 'data'),
+     State('gravity-store', 'data'),
+     State('export-format', 'value'),
      State('results-container', 'children')],
     prevent_initial_call=True
 )
-def export_data(n_clicks, loads, targets, results):
+def export_data(n_clicks, loads, targets, gravity, export_format, results):
     if n_clicks is None:
         return dash.no_update
-    
-    # Create formatted text content
-    content = "=== Rigid Load Transfer Analysis Report ===\n\n"
-    
-    # Add loads information
-    content += "=== Input Load Systems ===\n"
-    for i, load in enumerate(loads):
-        content += f"{load.get('name', f'Load System {i+1}')}:\n"
-        # content += f"Load System {i+1}:\n"
-        content += f"  Position (X,Y,Z): {load['translation']}\n"
-        content += f"  Rotation Order: {load['rotation_order']}\n"
-        content += f"  Euler Angles (deg): {load['euler_angles']}\n"
-        content += f"  Force (X,Y,Z): {load['force']}\n"
-        content += f"  Moment (X,Y,Z): {load['moment']}\n"
-        if 'mass' in load:
-            content += f"  Mass: {load['mass']} kg\n"
-        if 'cog' in load:
-            content += f"  Center of Gravity (X,Y,Z): {load['cog']}\n"
-        content += f"  Color: {load['color']['hex']}\n\n"
-    
-    # Add targets information
-    content += "\n=== Target Systems ===\n"
-    for i, target in enumerate(targets):
-        content += f"{target.get('name', f'Target {i+1}')}:\n"
-        # content += f"Target System {i+1}:\n"
-        content += f"  Position (X,Y,Z): {target['translation']}\n"
-        content += f"  Rotation Order: {target['rotation_order']}\n"
-        content += f"  Euler Angles (deg): {target['euler_angles']}\n"
-        content += f"  Color: {target['color']['hex']}\n\n"
-    
-    # Add results
-    content += "\n=== Calculation Results ===\n"
-    if results and 'props' in results and 'data' in results['props']:
-        for row in results['props']['data']:
-            content += f"{row['System']}:\n"
-            content += f"  Force: X={row['Fx']}, Y={row['Fy']}, Z={row['Fz']}\n"
-            content += f"  Moment: X={row['Mx']}, Y={row['My']}, Z={row['Mz']}\n\n"
-    
-    content += "\n=== End of Report ==="
     
     # Create timestamp for filename
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"RLT_Report_{timestamp}.txt"
     
-    return dict(content=content, filename=filename)
+    # Determine if we should use classic format based on user selection or auto-detection
+    use_classic_format = export_format == 'classic'
+    
+    # If auto detection, check if targets came from edges
+    if export_format == 'auto':
+        use_classic_format = True
+        # If any target has an 'edge_id' or comes from an edge, use new format
+        for target in targets:
+            if any(key in target for key in ['edge_id', 'source', 'target']):
+                use_classic_format = False
+                break
+    
+    if use_classic_format:
+        # Export in classic RLT format (loads and targets)
+        classic_data = {
+            "loads": loads,
+            "targets": targets,
+            "gravity": gravity
+        }
+        
+        # Export as JSON file in classic format
+        json_filename = f"RLT_Data_{timestamp}.json"
+        json_str = json.dumps(classic_data, indent=2)
+        formatted_json = format_json_compact_arrays(json_str)
+        return dict(content=formatted_json, filename=json_filename)
+    else:
+        # Create JSON structure matching the new format with nodes and edges
+        json_data = {
+            "metadata": {
+                "version": "1.0",
+                "coordinate_system": "right-handed",
+                "units": {
+                    "force": "N",
+                    "moment": "Nm",
+                    "mass": "kg",
+                    "distance": "mm"
+                },
+                "description": "Data generated by Rigid Load Transfer Tool"
+            },
+            "nodes": [],
+            "edges": [],
+            "gravity": gravity
+        }
+        
+        # Convert loads to nodes
+        for i, load in enumerate(loads):
+            node = {
+                "id": load.get('id', f"n{i}"),
+                "name": load.get('name', f'Load System {i+1}'),
+                "color": load['color']['hex'],
+                "mass": load.get('mass', 0.0),
+                "cog": load.get('cog', [0.0, 0.0, 0.0]),
+                "external_force": load.get('force', [0.0, 0.0, 0.0]),
+                "moment": load.get('moment', [0.0, 0.0, 0.0]),
+                "euler_angles": load.get('euler_angles', [0.0, 0.0, 0.0]),
+                "rotation_order": load.get('rotation_order', 'xyz'),
+                "translation": load.get('translation', [0.0, 0.0, 0.0]),
+                "position": {"x": load.get('translation', [0, 0, 0])[0] * 10, 
+                            "y": load.get('translation', [0, 0, 0])[1] * 10}
+            }
+            json_data["nodes"].append(node)
+        
+        # Convert targets to edges
+        for i, target in enumerate(targets):
+            # Use existing source/target if available, otherwise create a default connection
+            source = target.get('source', f"n{i % len(json_data['nodes'])}")
+            target_id = target.get('target', f"n{(i + 1) % len(json_data['nodes'])}")
+            
+            edge = {
+                "id": target.get('edge_id', f"e{i}"),
+                "source": source,
+                "target": target_id,
+                "interface_properties": {
+                    "euler_angles": target.get('euler_angles', [0.0, 0.0, 0.0]),
+                    "rotation_order": target.get('rotation_order', 'xyz'),
+                    "position": target.get('translation', [0.0, 0.0, 0.0]),
+                    "rlt_results": {
+                        "force": [0.0, 0.0, 0.0],
+                        "moment": [0.0, 0.0, 0.0],
+                        "is_valid": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+            }
+            
+            # If we have results, update the edge with calculated values
+            if results and 'props' in results and 'data' in results['props'] and i < len(results['props']['data']):
+                result_row = results['props']['data'][i]
+                edge["interface_properties"]["rlt_results"]["force"] = [
+                    float(result_row.get('Fx', '0').replace(',', '')),
+                    float(result_row.get('Fy', '0').replace(',', '')),
+                    float(result_row.get('Fz', '0').replace(',', ''))
+                ]
+                edge["interface_properties"]["rlt_results"]["moment"] = [
+                    float(result_row.get('Mx', '0').replace(',', '')),
+                    float(result_row.get('My', '0').replace(',', '')),
+                    float(result_row.get('Mz', '0').replace(',', ''))
+                ]
+            
+            json_data["edges"].append(edge)
+        
+        # Export as JSON file
+        json_filename = f"RLT_Data_{timestamp}.json"
+        json_str = json.dumps(json_data, indent=2)
+        formatted_json = format_json_compact_arrays(json_str)
+        return dict(content=formatted_json, filename=json_filename)
 
 
 @app.callback(
-    [Output('loads-store', 'data',allow_duplicate=True),
-     Output('targets-store', 'data',allow_duplicate=True)],
+    [Output('loads-store', 'data', allow_duplicate=True),
+     Output('targets-store', 'data', allow_duplicate=True),
+     Output('gravity-store', 'data', allow_duplicate=True)],
     [Input('upload-data', 'contents')],
     [State('upload-data', 'filename')],
     prevent_initial_call=True
 )
 def update_stores_from_file(contents, filename):
     if contents is None:
-        return dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update
 
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
@@ -867,23 +990,146 @@ def update_stores_from_file(contents, filename):
         if filename.endswith('.json'):
             data = json.loads(decoded.decode('utf-8'))
             
-            # Convert angles from degrees to radians
-            for load in data.get('loads', []):
-                if 'euler_angles' in load:
-                    load['euler_angles'] = np.array(load['euler_angles']).tolist()
+            # Handle new JSON format with nodes and edges
+            if 'nodes' in data and 'edges' in data:
+                loads = []
+                targets = []
+                gravity_data = data.get('gravity', {'value': 9.81, 'direction': [0, 0, -1]})
+                
+                # Process nodes as loads
+                node_id_map = {}  # To track node IDs and their index in the loads array
+                for i, node in enumerate(data['nodes']):
+                    # Extract node properties based on format
+                    if 'data' in node:
+                        # Old format with data nesting
+                        node_data = node['data']
+                    else:
+                        # New format with properties at top level
+                        node_data = node
+                    
+                    node_id = node_data.get('id', f'n{i}')
+                    node_id_map[node_id] = len(loads)  # Track position in loads array
+                    
+                    # Create load system from node
+                    load = {
+                        'id': node_id,  # Store original id for reference
+                        'name': node_data.get('name', node_data.get('id', f'Load {len(loads) + 1}')),
+                        'force': node_data.get('external_force', node_data.get('force', [0.0, 0.0, 0.0])),
+                        'moment': node_data.get('moment', [0.0, 0.0, 0.0]),
+                        'euler_angles': node_data.get('euler_angles', [0.0, 0.0, 0.0]),
+                        'rotation_order': node_data.get('rotation_order', 'xyz'),
+                        'translation': node_data.get('translation', [0.0, 0.0, 0.0]),
+                        'color': {'hex': node_data.get('color', f'#{np.random.randint(0, 0xFFFFFF):06x}')},
+                        'mass': node_data.get('mass', 0.0),
+                        'cog': node_data.get('cog', [0.0, 0.0, 0.0])
+                    }
+                    loads.append(load)
+                
+                # Process edges as targets
+                for i, edge in enumerate(data['edges']):
+                    # Extract edge properties based on format
+                    if 'data' in edge:
+                        # Old format with data nesting
+                        edge_data = edge['data']
+                    else:
+                        # New format with properties at top level
+                        edge_data = edge
+                    
+                    # Get interface properties
+                    interface_props = edge_data.get('interface_properties', {})
+                    
+                    # Create target system from edge
+                    target = {
+                        'edge_id': edge_data.get('id', f'e{i}'),  # Store original edge id
+                        'source': edge_data.get('source', ''),  # Store source node
+                        'target': edge_data.get('target', ''),  # Store target node
+                        'name': f'{edge_data.get("id", f"Edge {len(targets) + 1}")}',
+                        'euler_angles': interface_props.get('euler_angles', [0.0, 0.0, 0.0]),
+                        'rotation_order': interface_props.get('rotation_order', 'xyz'),
+                        'translation': interface_props.get('position', [0.0, 0.0, 0.0]),
+                        'color': {'hex': f'#{np.random.randint(0, 0xFFFFFF):06x}'}
+                    }
+                    targets.append(target)
+                
+                return loads, targets, gravity_data
             
-            for target in data.get('targets', []):
-                if 'euler_angles' in target:
-                    target['euler_angles'] = np.array(target['euler_angles']).tolist()
-            
-            return data.get('loads', []), data.get('targets', [])
+            # Handle old format with loads and targets directly
+            else:
+                # No need to add edge info since this is classic format
+                # Convert angles from degrees to radians (no conversion needed for new format)
+                for load in data.get('loads', []):
+                    if 'euler_angles' in load:
+                        load['euler_angles'] = np.array(load['euler_angles']).tolist()
+                
+                for target in data.get('targets', []):
+                    if 'euler_angles' in target:
+                        target['euler_angles'] = np.array(target['euler_angles']).tolist()
+                
+                return data.get('loads', []), data.get('targets', []), data.get('gravity', {'value': 9.81, 'direction': [0, 0, -1]})
             
         else:
             raise ValueError("Unsupported file format")
     except Exception as e:
         print(f"Error parsing file: {e}")
-        return dash.no_update, dash.no_update   
-        
+        return dash.no_update, dash.no_update, dash.no_update
+
+# Helper functions to handle both old and new JSON formats
+def get_node_data(node):
+    """Extract node data regardless of format (nested or flat)"""
+    if "data" in node and isinstance(node["data"], dict):
+        # Old format with nested data
+        return node["data"]
+    # New format with properties at top level
+    return node
+
+def get_edge_data(edge):
+    """Extract edge source, target, id and interface properties from either format"""
+    if "data" in edge and isinstance(edge["data"], dict):
+        # Old format with nested data
+        edge_data = edge["data"]
+        # Check if interface properties are nested under data
+        interface_props = edge_data.get("interface_properties", {})
+        if not interface_props:
+            # If not found, check for individual interface properties
+            interface_props = {
+                "euler_angles": edge_data.get("interface_euler_angles", [0.0, 0.0, 0.0]),
+                "rotation_order": edge_data.get("interface_rotation_order", "xyz"),
+                "position": edge_data.get("interface_position", [0.0, 0.0, 0.0]),
+                "rlt_results": edge_data.get("rlt_results", {
+                    "force": [0.0, 0.0, 0.0],
+                    "moment": [0.0, 0.0, 0.0],
+                    "is_valid": False,
+                    "timestamp": None
+                })
+            }
+        return {
+            "id": edge_data.get("id", ""),
+            "source": edge_data.get("source", ""),
+            "target": edge_data.get("target", ""),
+            "interface_properties": interface_props
+        }
+    
+    # New format with properties at top level
+    interface_props = edge.get("interface_properties", {})
+    return {
+        "id": edge.get("id", ""),
+        "source": edge.get("source", ""),
+        "target": edge.get("target", ""),
+        "interface_properties": interface_props
+    }
+
+def extract_gravity_data(json_data):
+    """Extract gravity information from JSON data"""
+    gravity_data = {'value': 9.81, 'direction': [0, 0, -1]}
+    
+    if 'gravity' in json_data:
+        gravity = json_data['gravity']
+        if isinstance(gravity, dict):
+            gravity_data['value'] = gravity.get('value', 9.81)
+            gravity_data['direction'] = gravity.get('direction', [0, 0, -1])
+    
+    return gravity_data
+
 # # Find a free port dynamically
 # import webbrowser  # Add this line
 # import socket

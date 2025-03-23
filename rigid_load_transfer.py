@@ -50,7 +50,7 @@ if __name__ == "__main__":
 
 
 
-def combine_loads(loads, target_system):
+def combine_loads(loads, target_system, include_gravity=True, gravity_data=None):
     """
     Combines multiple loads from different coordinate systems into a target system
 
@@ -61,11 +61,19 @@ def combine_loads(loads, target_system):
             'euler_angles' - [rx, ry, rz] in radians
             'rotation_order' - e.g., 'xyz'
             'translation' - [x, y, z] in global system
+            'mass' - mass in kg (optional)
+            'cog' - center of gravity in local coordinates (optional)
 
         target_system: Dictionary containing:
             'euler_angles' - target system orientation
             'rotation_order' - target rotation order
             'translation' - target system position
+
+        include_gravity: Boolean to include gravity effects
+        
+        gravity_data: Dictionary containing:
+            'value' - gravity value in m/s²
+            'direction' - gravity direction vector [x, y, z]
 
     Returns:
         total_force: Combined force in target system
@@ -81,6 +89,17 @@ def combine_loads(loads, target_system):
     total_force = np.zeros(3)
     total_moment = np.zeros(3)
 
+    # Set default gravity data if not provided
+    if gravity_data is None:
+        gravity_data = {'value': 9.81, 'direction': [0, 0, -1]}
+    
+    # Normalize gravity direction
+    gravity_dir = np.array(gravity_data.get('direction', [0, 0, -1]))
+    gravity_norm = np.linalg.norm(gravity_dir)
+    if gravity_norm > 0:
+        gravity_dir = gravity_dir / gravity_norm
+    gravity_value = gravity_data.get('value', 9.81)
+
     for load in loads:
         # Create source system rotation matrix
         R_source, source_pos = create_rotation_matrix(
@@ -89,10 +108,35 @@ def combine_loads(loads, target_system):
             load['translation']
         )
 
+        # Get force and moment, defaulting to zeros if not present
+        force = np.array(load.get('force', [0, 0, 0]))
+        moment = np.array(load.get('moment', [0, 0, 0]))
+        
+        # Calculate gravity force if mass is present and gravity is enabled
+        if include_gravity and 'mass' in load and load['mass'] > 0:
+            mass = float(load['mass'])
+            
+            # Get center of gravity or use load position if not specified
+            cog_local = np.array(load.get('cog', [0, 0, 0]))
+            
+            # Calculate gravity force in global coordinates
+            gravity_force_global = mass * gravity_value * gravity_dir
+            
+            # Transform gravity force to local load coordinate system
+            gravity_force_local = R_source.T @ gravity_force_global
+            
+            # Add gravity force to load force
+            force = force + gravity_force_local
+            
+            # Calculate gravity moment (only if COG is not at origin)
+            if not np.all(cog_local == 0):
+                gravity_moment_local = np.cross(cog_local, R_source.T @ gravity_force_global)
+                moment = moment + gravity_moment_local
+
         # Transfer load to target system
         F_trans, M_trans = rigid_load_transfer(
-            force_local_A=np.array(load['force']),
-            moment_local_A=np.array(load['moment']),
+            force_local_A=force,
+            moment_local_A=moment,
             R_A=R_source,
             point_A_global=source_pos,
             R_B=R_target,
