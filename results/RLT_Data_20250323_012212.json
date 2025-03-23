@@ -1,0 +1,120 @@
+{
+  "loads": [
+    {
+      "id": "Nacelle",
+      "name": "Nacelle Assembly",
+      "force": [0, 12000, 0],
+      "moment": [50000, 0, 25000],
+      "euler_angles": [0, 0, 0],
+      "rotation_order": "xyz",
+      "translation": [0, 0, 80],
+      "color": {
+        "hex": "#2ECC40"
+      },
+      "mass": 85000,
+      "cog": [0.5, 0, 2.1]
+    },
+    {
+      "id": "Tower",
+      "name": "Tower Structure",
+      "force": [5000, 8000, 0],
+      "moment": [0, 0, 0],
+      "euler_angles": [0, 0, 0],
+      "rotation_order": "xyz",
+      "translation": [0, 0, 40],
+      "color": {
+        "hex": "#FF851B"
+      },
+      "mass": 120000,
+      "cog": [0, 0, 40]
+    },
+    {
+      "id": "Foundation",
+      "name": "Concrete Foundation",
+      "force": [0, 0, 0],
+      "moment": [0, 0, 0],
+      "euler_angles": [0, 0, 0],
+      "rotation_order": "xyz",
+      "translation": [0, 0, 0],
+      "color": {
+        "hex": "#7FDBFF"
+      },
+      "mass": 350000,
+      "cog": [0, 0, -2.5]
+    },
+    {
+      "id": "Rotor",
+      "name": "Rotor Assembly",
+      "force": [15000, 22000, 0],
+      "moment": [0, 0, 35000],
+      "euler_angles": [0, 90, 0],
+      "rotation_order": "yxz",
+      "translation": [5, 0, 80],
+      "color": {
+        "hex": "#0074D9"
+      },
+      "mass": 55000,
+      "cog": [5, 0, 0]
+    }
+  ],
+  "targets": [
+    {
+      "edge_id": "e0",
+      "source": "Rotor",
+      "target": "Nacelle",
+      "name": "e0",
+      "euler_angles": [0, 45, 0],
+      "rotation_order": "yxz",
+      "translation": [5, 0, 80],
+      "color": {
+        "hex": "#c17480"
+      },
+      "rlt_results": {
+        "force": [20000.0, -4201699.2, -4229983.48],
+        "moment": [370000.0, -17266186.42, 20975315.04],
+        "is_valid": true,
+        "timestamp": "2025-03-23T01:22:12.852532"
+      }
+    },
+    {
+      "edge_id": "e1",
+      "source": "Nacelle",
+      "target": "Tower",
+      "name": "e1",
+      "euler_angles": [0, 0, 0],
+      "rotation_order": "xyz",
+      "translation": [0, 0, 80],
+      "color": {
+        "hex": "#c3b808"
+      },
+      "rlt_results": {
+        "force": [20000.0, 20000.0, -5962100.0],
+        "moment": [370000.0, 2769675.0, 2722750.0],
+        "is_valid": true,
+        "timestamp": "2025-03-23T01:22:12.853529"
+      }
+    },
+    {
+      "edge_id": "e2",
+      "source": "Tower",
+      "target": "Foundation",
+      "name": "e2",
+      "euler_angles": [0, 0, 0],
+      "rotation_order": "xyz",
+      "translation": [0, 0, 0],
+      "color": {
+        "hex": "#c0feef"
+      },
+      "rlt_results": {
+        "force": [20000.0, 20000.0, -5962100.0],
+        "moment": [-1230000.0, 4369675.0, 2722750.0],
+        "is_valid": true,
+        "timestamp": "2025-03-23T01:22:12.853529"
+      }
+    }
+  ],
+  "gravity": {
+    "value": 9.81,
+    "direction": [0, 0, -1]
+  }
+}

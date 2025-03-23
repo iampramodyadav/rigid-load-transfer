@@ -1,0 +1,79 @@
+{
+  "loads": [
+    {
+      "name": "iSys1",
+      "force": [5, 10, 10],
+      "moment": [10, 20, 15],
+      "euler_angles": [30, 10, 90],
+      "rotation_order": "xyz",
+      "translation": [2, 4, 3],
+      "mass": 10,
+      "cog": [0.1, 0.02, 0.003],
+      "color": {
+        "hex": "#f2ff00"
+      }
+    },
+    {
+      "name": "iSys2",
+      "force": [1, 2, 3],
+      "moment": [20, 25, 21],
+      "euler_angles": [30, 90, 180],
+      "rotation_order": "xyz",
+      "translation": [1, 2, 3],
+      "color": {
+        "hex": "#ff00bb"
+      },
+      "mass": 0,
+      "cog": [0, 0, 0]
+    },
+    {
+      "name": "iSys3",
+      "force": [0, 0, 0],
+      "moment": [0, 0, 0],
+      "euler_angles": [0, 0, 0],
+      "rotation_order": "xyz",
+      "translation": [4, 2, 2],
+      "color": {
+        "hex": "#f2ff00"
+      },
+      "mass": 0,
+      "cog": [0, 0, 0]
+    }
+  ],
+  "targets": [
+    {
+      "name": "oSys1",
+      "euler_angles": [10, 20, 30],
+      "rotation_order": "xyz",
+      "translation": [0, 0, 0],
+      "color": {
+        "hex": "#00FF00"
+      },
+      "rlt_results": {
+        "force": [27.0, -4.68, -82.68],
+        "moment": [-280.23, 323.6, -114.95],
+        "is_valid": true,
+        "timestamp": "2025-03-23T01:23:34.174395"
+      }
+    },
+    {
+      "name": "oSys2",
+      "euler_angles": [90, 0, 0],
+      "rotation_order": "xyz",
+      "translation": [-5, 0, 3],
+      "color": {
+        "hex": "#300519"
+      },
+      "rlt_results": {
+        "force": [-7.26, -86.52, -7.06],
+        "moment": [-393.06, 77.59, -606.22],
+        "is_valid": true,
+        "timestamp": "2025-03-23T01:23:34.174395"
+      }
+    }
+  ],
+  "gravity": {
+    "value": 9.81,
+    "direction": [0, 0, -1]
+  }
+}
