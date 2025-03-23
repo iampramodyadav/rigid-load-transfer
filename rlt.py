@@ -69,7 +69,8 @@ app.layout = html.Div([
     dcc.Store(id='loads-store', data=[]),
     dcc.Store(id='targets-store', data=[]),
     dcc.Store(id='gravity-store', data={'value': 9.81, 'direction': [0, 0, -1]}),
-    dcc.Download(id="download-data"), 
+    dcc.Download(id="download-data"),
+    dcc.Download(id="download-plot-html"),
     html.Div([
         html.Div([
             # html.H3("Input Systems", style={'color': '#2980b9'}),
@@ -152,6 +153,17 @@ app.layout = html.Div([
                     'borderRadius': '5px',
                     'cursor': 'pointer',
                     'fontSize': '16px'
+                }),
+                html.Button('📊 Export Plot as HTML', id='export-plot-btn', style={
+                    'width': '100%', 
+                    'backgroundColor': '#9b59b6', 
+                    'color': 'white',
+                    'border': 'none',
+                    'padding': '10px',
+                    'borderRadius': '5px',
+                    'cursor': 'pointer',
+                    'fontSize': '16px',
+                    'marginTop': '10px'
                 }),
             ], style={'marginTop': '10px'}),
          #--------------------------- Simplified theme selector using Plotly templates --------------------------
@@ -990,6 +1002,34 @@ def export_data(n_clicks, loads, targets, gravity, export_format, results):
         formatted_json = format_json_compact_arrays(json_str)
         return dict(content=formatted_json, filename=json_filename)
 
+@app.callback(
+    Output('download-plot-html', 'data'),
+    Input('export-plot-btn', 'n_clicks'),
+    State('3d-plot', 'figure'),
+    prevent_initial_call=True
+)
+def export_plot_html(n_clicks, figure):
+    """Export the current 3D plot as an interactive HTML file."""
+    if n_clicks is None:
+        return dash.no_update
+    
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create an interactive HTML representation of the figure
+    import plotly.io as pio
+    html_content = pio.to_html(
+        figure, 
+        include_plotlyjs=True,
+        full_html=True,
+        config={'displayModeBar': True}
+    )
+    
+    # Return as file download
+    return dict(
+        content=html_content,
+        filename=f"RLT_Plot_{timestamp}.html"
+    )
 
 @app.callback(
     [Output('loads-store', 'data', allow_duplicate=True),
