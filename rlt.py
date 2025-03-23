@@ -883,6 +883,26 @@ def export_data(n_clicks, loads, targets, gravity, export_format, results):
             "gravity": gravity
         }
         
+        # Add RLT results to each target if available
+        if results and 'props' in results and 'data' in results['props']:
+            for i, target in enumerate(classic_data["targets"]):
+                if i < len(results['props']['data']):
+                    result_row = results['props']['data'][i]
+                    target["rlt_results"] = {
+                        "force": [
+                            float(result_row.get('Fx', '0').replace(',', '')),
+                            float(result_row.get('Fy', '0').replace(',', '')),
+                            float(result_row.get('Fz', '0').replace(',', ''))
+                        ],
+                        "moment": [
+                            float(result_row.get('Mx', '0').replace(',', '')),
+                            float(result_row.get('My', '0').replace(',', '')),
+                            float(result_row.get('Mz', '0').replace(',', ''))
+                        ],
+                        "is_valid": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+        
         # Export as JSON file in classic format
         json_filename = f"RLT_Data_{timestamp}.json"
         json_str = json.dumps(classic_data, indent=2)
