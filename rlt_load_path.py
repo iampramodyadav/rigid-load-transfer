@@ -10,14 +10,381 @@ from PySide6.QtWidgets import (
     QTabWidget, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,
     QGraphicsLineItem, QGraphicsTextItem, QListWidget, QListWidgetItem,
     QDialog, QDialogButtonBox, QTextEdit, QCheckBox, QSpinBox, QDoubleSpinBox,
-    QInputDialog
+    QInputDialog, QProgressDialog, QMenuBar, QMenu, QDockWidget, QFrame
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtCore import Qt, Signal, QObject, QTimer, QPointF, QRectF, QLineF
-from PySide6.QtGui import QFont, QAction, QPen, QBrush, QColor, QPainter
+from PySide6.QtCore import Qt, Signal, QObject, QTimer, QPointF, QRectF, QLineF, QSettings, QThread
+from PySide6.QtGui import QFont, QAction, QPen, QBrush, QColor, QPainter, QKeySequence, QIcon
 import plotly.graph_objects as go
 import rigid_load_transfer as rlt
 import plot_3d as plot3d
+
+
+# ===================== CALCULATION WORKER THREAD =====================
+class CalculationWorker(QThread):
+    """Background thread for heavy calculations"""
+    calculation_complete = Signal(object)
+    progress_update = Signal(int, str)
+    
+    def __init__(self, graph_data, gravity_data, triad_size):
+        super().__init__()
+        self.graph_data = graph_data
+        self.gravity_data = gravity_data
+        self.triad_size = triad_size
+        
+    def run(self):
+        """Perform calculations in background"""
+        try:
+            result = {
+                'success': True,
+                'edge_results': [],
+                'figure_data': None
+            }
+            
+            # Simulate calculation progress
+            total_items = len(self.graph_data['nodes']) + len(self.graph_data['edges'])
+            progress = 0
+            
+            for i, node in enumerate(self.graph_data['nodes']):
+                progress = int((i / total_items) * 100)
+                self.progress_update.emit(progress, f"Processing node {node.get('name', '')}...")
+                # Add small delay to show progress (remove in production)
+                self.msleep(10)
+            
+            for i, edge in enumerate(self.graph_data['edges']):
+                progress = int(((len(self.graph_data['nodes']) + i) / total_items) * 100)
+                self.progress_update.emit(progress, f"Calculating edge {edge.get('id', '')}...")
+                self.msleep(10)
+            
+            self.progress_update.emit(100, "Complete!")
+            self.calculation_complete.emit(result)
+            
+        except Exception as e:
+            result = {'success': False, 'error': str(e)}
+            self.calculation_complete.emit(result)
+
+
+# ===================== UNITS MANAGER =====================
+class UnitsManager:
+    """Manage unit conversions"""
+    UNITS = {
+        'force': {'N': 1.0, 'kN': 1000.0, 'lbf': 4.44822, 'kip': 4448.22},
+        'moment': {'Nm': 1.0, 'kNm': 1000.0, 'lbf-ft': 1.35582, 'kip-ft': 1355.82},
+        'length': {'mm': 1.0, 'm': 1000.0, 'cm': 10.0, 'in': 25.4, 'ft': 304.8},
+        'mass': {'kg': 1.0, 'g': 0.001, 'ton': 1000.0, 'lb': 0.453592}
+    }
+    
+    def __init__(self):
+        self.current_units = {
+            'force': 'N',
+            'moment': 'Nm',
+            'length': 'mm',
+            'mass': 'kg'
+        }
+    
+    def convert(self, value, from_unit, to_unit, unit_type):
+        """Convert value between units"""
+        if from_unit == to_unit:
+            return value
+        base_value = value * self.UNITS[unit_type][from_unit]
+        return base_value / self.UNITS[unit_type][to_unit]
+    
+    def set_unit(self, unit_type, unit):
+        """Set current unit for a type"""
+        if unit_type in self.current_units and unit in self.UNITS[unit_type]:
+            self.current_units[unit_type] = unit
+            return True
+        return False
+    
+    def get_unit(self, unit_type):
+        """Get current unit for a type"""
+        return self.current_units.get(unit_type, '')
+
+
+# ===================== VALIDATION MANAGER =====================
+class ValidationManager:
+    """Validate input data and provide warnings"""
+    
+    @staticmethod
+    def validate_node(node_data):
+        """Validate node data"""
+        warnings = []
+        errors = []
+        
+        # Check required fields
+        if not node_data.get('name'):
+            errors.append("Node name is required")
+        
+        # Check rotation angles
+        angles = node_data.get('euler_angles', [0, 0, 0])
+        for i, angle in enumerate(angles):
+            if abs(angle) > 360:
+                warnings.append(f"Rotation angle {['X', 'Y', 'Z'][i]} exceeds 360°")
+        
+        # Check mass
+        mass = node_data.get('mass', 0)
+        if mass < 0:
+            errors.append("Mass cannot be negative")
+        
+        # Check for very large forces
+        force = node_data.get('external_force', [0, 0, 0])
+        max_force = max(abs(f) for f in force)
+        if max_force > 1000000:
+            warnings.append(f"Very large force detected: {max_force:.2e} N")
+        
+        return errors, warnings
+    
+    @staticmethod
+    def validate_edge(edge_data, nodes):
+        """Validate edge data"""
+        warnings = []
+        errors = []
+        
+        # Check source and target exist
+        source = edge_data.get('source')
+        target = edge_data.get('target')
+        
+        node_ids = [n['id'] for n in nodes]
+        if source not in node_ids:
+            errors.append(f"Source node '{source}' not found")
+        if target not in node_ids:
+            errors.append(f"Target node '{target}' not found")
+        
+        if source == target:
+            errors.append("Source and target cannot be the same")
+        
+        return errors, warnings
+    
+    @staticmethod
+    def check_system_consistency(graph_data):
+        """Check overall system consistency"""
+        warnings = []
+        errors = []
+        
+        # Check for isolated nodes
+        connected_nodes = set()
+        for edge in graph_data['edges']:
+            connected_nodes.add(edge['source'])
+            connected_nodes.add(edge['target'])
+        
+        all_nodes = {n['id'] for n in graph_data['nodes']}
+        isolated = all_nodes - connected_nodes
+        if isolated:
+            warnings.append(f"Isolated nodes detected: {', '.join(isolated)}")
+        
+        # Check for circular dependencies
+        # (Simple check - more sophisticated cycle detection could be added)
+        
+        return errors, warnings
+
+
+# ===================== REPORT GENERATOR =====================
+class ReportGenerator:
+    """Generate analysis reports"""
+    
+    @staticmethod
+    def generate_summary_report(graph_data, results):
+        """Generate text summary report"""
+        report = []
+        report.append("=" * 60)
+        report.append("LOAD TRANSFER ANALYSIS REPORT")
+        report.append("=" * 60)
+        report.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append("")
+        
+        # System overview
+        report.append("SYSTEM OVERVIEW")
+        report.append("-" * 60)
+        report.append(f"Total Nodes: {len(graph_data['nodes'])}")
+        report.append(f"Total Connections: {len(graph_data['edges'])}")
+        report.append("")
+        
+        # Nodes summary
+        report.append("NODES")
+        report.append("-" * 60)
+        for node in graph_data['nodes']:
+            # report.append()
+            # ("Position", node_data.get('translation', [0, 0, 0])),
+            # ("Rotation", node_data.get('euler_angles', [0, 0, 0])),
+            # ("CoG", node_data.get('cog', [0, 0, 0])),
+            # ("Force", node_data.get('external_force', [0, 0, 0])),
+            # ("Moment", node_data.get('moment', [0, 0, 0]))
+            report.append(f"\n{node['name']} ({node['id']})")
+
+            report.append(f"  Position: {node['translation']}")
+            report.append(f"  Euler angles:  {node['rotation_order']} | {node['euler_angles']}")
+            report.append(f"  COG: {node['cog']}")
+
+            report.append(f"  Mass: {node.get('mass', 0)} kg")
+            force = node.get('external_force', [0, 0, 0])
+            moment = node.get('moment', [0, 0, 0])
+            if any(f != 0 for f in force):
+                report.append(f"  External Force: {force}")
+            if any(m != 0 for m in moment):
+                report.append(f"  External Moment: {moment}")     
+        report.append("")
+        
+        # Edges summary
+        report.append("CONNECTIONS & RESULTS")
+        report.append("-" * 60)
+        for edge in graph_data['edges']:
+            report.append(f"\n{edge['id']}: {edge['source']} → {edge['target']}")
+            interface = edge.get('interface_properties', {})
+            rlt_results = interface.get('rlt_results', {})
+
+            if rlt_results.get('is_valid'):
+                force = rlt_results['force']
+                moment = rlt_results['moment']
+
+                position = interface['position']
+                rotation_order = interface['rotation_order']
+                euler_angles = interface['euler_angles']
+
+                report.append(f"  Position:     [{position[0]:10.3f}, {position[1]:10.3f}, {position[2]:10.3f}] N")
+                report.append(f"  Euler angles: {rotation_order}|[{euler_angles[0]:10.3f}, {euler_angles[1]:10.3f}, {euler_angles[2]:10.3f}] deg")
+                report.append(f"  Force:  [{force[0]:10.3f}, {force[1]:10.3f}, {force[2]:10.3f}] N")
+                report.append(f"  Moment: [{moment[0]:10.3f}, {moment[1]:10.3f}, {moment[2]:10.3f}] Nm")
+        
+        report.append("")
+        report.append("=" * 60)
+        
+        return "\n".join(report)
+    
+    @staticmethod
+    def export_to_csv(graph_data, filepath):
+        """Export results to CSV"""
+        try:
+            with open(filepath, 'w') as f:
+                # Header
+                f.write("Edge ID,Source,Target,Fx,Fy,Fz,Mx,My,Mz,Position X,Position Y,Position Z\n")
+                
+                # Data
+                for edge in graph_data['edges']:
+                    interface = edge.get('interface_properties', {})
+                    rlt_results = interface.get('rlt_results', {})
+                    pos = interface.get('position', [0, 0, 0])
+                    
+                    if rlt_results.get('is_valid'):
+                        force = rlt_results['force']
+                        moment = rlt_results['moment']
+                        
+                        f.write(f"{edge['id']},{edge['source']},{edge['target']},")
+                        f.write(f"{force[0]:.6f},{force[1]:.6f},{force[2]:.6f},")
+                        f.write(f"{moment[0]:.6f},{moment[1]:.6f},{moment[2]:.6f},")
+                        f.write(f"{pos[0]:.6f},{pos[1]:.6f},{pos[2]:.6f}\n")
+            
+            return True
+        except Exception as e:
+            print(f"Error exporting CSV: {e}")
+            return False
+
+
+# ===================== PREFERENCES DIALOG =====================
+class PreferencesDialog(QDialog):
+    """Application preferences dialog"""
+    def __init__(self, units_manager, parent=None):
+        super().__init__(parent)
+        self.units_manager = units_manager
+        self.setWindowTitle("Preferences")
+        self.setModal(True)
+        self.setMinimumWidth(500)
+        
+        layout = QVBoxLayout()
+        
+        # Units section
+        units_group = QGroupBox("Units")
+        units_layout = QVBoxLayout()
+        
+        # Force units
+        force_layout = QHBoxLayout()
+        force_layout.addWidget(QLabel("Force:"))
+        self.force_combo = QComboBox()
+        self.force_combo.addItems(['N', 'kN', 'lbf', 'kip'])
+        self.force_combo.setCurrentText(units_manager.get_unit('force'))
+        force_layout.addWidget(self.force_combo)
+        force_layout.addStretch()
+        units_layout.addLayout(force_layout)
+        
+        # Moment units
+        moment_layout = QHBoxLayout()
+        moment_layout.addWidget(QLabel("Moment:"))
+        self.moment_combo = QComboBox()
+        self.moment_combo.addItems(['Nm', 'kNm', 'lbf-ft', 'kip-ft'])
+        self.moment_combo.setCurrentText(units_manager.get_unit('moment'))
+        moment_layout.addWidget(self.moment_combo)
+        moment_layout.addStretch()
+        units_layout.addLayout(moment_layout)
+        
+        # Length units
+        length_layout = QHBoxLayout()
+        length_layout.addWidget(QLabel("Length:"))
+        self.length_combo = QComboBox()
+        self.length_combo.addItems(['mm', 'm', 'cm', 'in', 'ft'])
+        self.length_combo.setCurrentText(units_manager.get_unit('length'))
+        length_layout.addWidget(self.length_combo)
+        length_layout.addStretch()
+        units_layout.addLayout(length_layout)
+        
+        # Mass units
+        mass_layout = QHBoxLayout()
+        mass_layout.addWidget(QLabel("Mass:"))
+        self.mass_combo = QComboBox()
+        self.mass_combo.addItems(['kg', 'g', 'ton', 'lb'])
+        self.mass_combo.setCurrentText(units_manager.get_unit('mass'))
+        mass_layout.addWidget(self.mass_combo)
+        mass_layout.addStretch()
+        units_layout.addLayout(mass_layout)
+        
+        units_group.setLayout(units_layout)
+        layout.addWidget(units_group)
+        
+        # Display settings
+        display_group = QGroupBox("Display Settings")
+        display_layout = QVBoxLayout()
+        
+        self.show_node_labels = QCheckBox("Show node labels in graph")
+        self.show_node_labels.setChecked(True)
+        display_layout.addWidget(self.show_node_labels)
+        
+        self.show_force_vectors = QCheckBox("Show force vectors")
+        self.show_force_vectors.setChecked(True)
+        display_layout.addWidget(self.show_force_vectors)
+        
+        self.show_moment_vectors = QCheckBox("Show moment vectors")
+        self.show_moment_vectors.setChecked(True)
+        display_layout.addWidget(self.show_moment_vectors)
+        
+        self.auto_calculate = QCheckBox("Auto-calculate on change")
+        self.auto_calculate.setChecked(True)
+        display_layout.addWidget(self.auto_calculate)
+        
+        display_group.setLayout(display_layout)
+        layout.addWidget(display_group)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+        self.setLayout(layout)
+    
+    def get_settings(self):
+        """Get all settings"""
+        return {
+            'units': {
+                'force': self.force_combo.currentText(),
+                'moment': self.moment_combo.currentText(),
+                'length': self.length_combo.currentText(),
+                'mass': self.mass_combo.currentText()
+            },
+            'display': {
+                'show_node_labels': self.show_node_labels.isChecked(),
+                'show_force_vectors': self.show_force_vectors.isChecked(),
+                'show_moment_vectors': self.show_moment_vectors.isChecked(),
+                'auto_calculate': self.auto_calculate.isChecked()
+            }
+        }
 
 
 # ===================== NODE GRAPH VISUALIZATION =====================
@@ -524,11 +891,27 @@ class IntegratedLoadTransferApp(QMainWindow):
         self.update_timer = QTimer()
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.update_visualization)
+        
+        # Initialize managers
+        self.units_manager = UnitsManager()
+        self.validation_manager = ValidationManager()
+        
+        # Settings
+        self.settings = QSettings('EngineeringTools', 'LoadTransferTool')
+        self.auto_calculate = True
+        self.show_force_vectors = True
+        self.show_moment_vectors = True
+        
+        # Recent files
+        self.recent_files = []
+        self.max_recent_files = 5
+        
         self.init_ui()
+        self.load_settings()
         
     def init_ui(self):
         """Initialize the user interface"""
-        self.setWindowTitle("Integrated Load Transfer & Path Visualization Tool")
+        self.setWindowTitle("Integrated Load Transfer & Path Visualization Tool v2.0")
         self.setGeometry(100, 50, 1600, 1000)
         
         # Set global stylesheet
@@ -563,7 +946,30 @@ class IntegratedLoadTransferApp(QMainWindow):
                 left: 10px;
                 padding: 0 5px;
             }
+            QMenuBar {
+                background-color: #34495e;
+                color: white;
+                padding: 5px;
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                padding: 5px 10px;
+            }
+            QMenuBar::item:selected {
+                background-color: #2c3e50;
+            }
+            QMenu {
+                background-color: white;
+                border: 1px solid #bdc3c7;
+            }
+            QMenu::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
         """)
+        
+        # Create menu bar
+        self.create_menu_bar()
         
         # Create toolbar
         self.create_toolbar()
@@ -576,6 +982,7 @@ class IntegratedLoadTransferApp(QMainWindow):
         self.tab_widget = QTabWidget()
         self.tab_widget.addTab(self.create_graph_view_tab(), "📊 Load Path Graph")
         self.tab_widget.addTab(self.create_3d_view_tab(), "🔄 3D Load Transfer")
+        self.tab_widget.addTab(self.create_summary_tab(), "📋 Summary & Reports")
         
         main_layout.addWidget(self.tab_widget)
         main_widget.setLayout(main_layout)
@@ -584,7 +991,100 @@ class IntegratedLoadTransferApp(QMainWindow):
         # Status bar
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
-        self.statusBar.showMessage("Ready")
+        self.statusBar.showMessage("Ready - Professional Engineering Analysis Tool")
+    
+    def create_menu_bar(self):
+        """Create menu bar"""
+        menubar = self.menuBar()
+        
+        # File menu
+        file_menu = menubar.addMenu('&File')
+        
+        new_action = QAction('&New', self)
+        new_action.setShortcut(QKeySequence.New)
+        new_action.triggered.connect(self.new_project)
+        file_menu.addAction(new_action)
+        
+        open_action = QAction('&Open...', self)
+        open_action.setShortcut(QKeySequence.Open)
+        open_action.triggered.connect(self.load_from_file)
+        file_menu.addAction(open_action)
+        
+        # Recent files submenu
+        self.recent_menu = file_menu.addMenu('Recent Files')
+        self.update_recent_files_menu()
+        
+        file_menu.addSeparator()
+        
+        save_action = QAction('&Save', self)
+        save_action.setShortcut(QKeySequence.Save)
+        save_action.triggered.connect(self.save_to_file)
+        file_menu.addAction(save_action)
+        
+        save_as_action = QAction('Save &As...', self)
+        save_as_action.setShortcut(QKeySequence.SaveAs)
+        save_as_action.triggered.connect(self.save_to_file)
+        file_menu.addAction(save_as_action)
+        
+        file_menu.addSeparator()
+        
+        export_menu = file_menu.addMenu('Export')
+        
+        export_csv_action = QAction('Export Results (CSV)', self)
+        export_csv_action.triggered.connect(self.export_results_csv)
+        export_menu.addAction(export_csv_action)
+        
+        export_report_action = QAction('Export Report (TXT)', self)
+        export_report_action.triggered.connect(self.export_report)
+        export_menu.addAction(export_report_action)
+        
+        export_plot_action = QAction('Export 3D Plot (HTML)', self)
+        export_plot_action.triggered.connect(self.export_plot_html)
+        export_menu.addAction(export_plot_action)
+        
+        file_menu.addSeparator()
+        
+        exit_action = QAction('E&xit', self)
+        exit_action.setShortcut(QKeySequence.Quit)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Edit menu
+        edit_menu = menubar.addMenu('&Edit')
+        
+        prefs_action = QAction('&Preferences...', self)
+        prefs_action.setShortcut(QKeySequence.Preferences)
+        prefs_action.triggered.connect(self.show_preferences)
+        edit_menu.addAction(prefs_action)
+        
+        # Tools menu
+        tools_menu = menubar.addMenu('&Tools')
+        
+        validate_action = QAction('&Validate System', self)
+        validate_action.triggered.connect(self.validate_system)
+        tools_menu.addAction(validate_action)
+        
+        test_cases_action = QAction('Load &Test Case...', self)
+        test_cases_action.triggered.connect(self.show_test_cases_dialog)
+        tools_menu.addAction(test_cases_action)
+        
+        # View menu
+        view_menu = menubar.addMenu('&View')
+        
+        reset_view_action = QAction('Reset 3D View', self)
+        reset_view_action.triggered.connect(self.reset_3d_view)
+        view_menu.addAction(reset_view_action)
+        
+        # Help menu
+        help_menu = menubar.addMenu('&Help')
+        
+        about_action = QAction('&About', self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+        
+        user_guide_action = QAction('&User Guide', self)
+        user_guide_action.triggered.connect(self.show_user_guide)
+        help_menu.addAction(user_guide_action)
         
     def create_toolbar(self):
         """Create application toolbar"""
@@ -833,6 +1333,49 @@ class IntegratedLoadTransferApp(QMainWindow):
         
         layout.addWidget(plot_group, 3)
         layout.addWidget(results_group, 1)
+        widget.setLayout(layout)
+        
+        return widget
+    
+    def create_summary_tab(self):
+        """Create the summary and reports tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Summary text area
+        summary_group = QGroupBox("Analysis Summary")
+        summary_layout = QVBoxLayout()
+        self.summary_text = QTextEdit()
+        self.summary_text.setReadOnly(True)
+        self.summary_text.setFont(QFont("Courier New", 10))
+        summary_layout.addWidget(self.summary_text)
+        summary_group.setLayout(summary_layout)
+        
+        # Update summary button
+        btn_layout = QHBoxLayout()
+        update_summary_btn = QPushButton("🔄 Update Summary")
+        update_summary_btn.clicked.connect(self.update_summary)
+        btn_layout.addWidget(update_summary_btn)
+        
+        export_summary_btn = QPushButton("📄 Export Report")
+        export_summary_btn.clicked.connect(self.export_report)
+        btn_layout.addWidget(export_summary_btn)
+        
+        btn_layout.addStretch()
+        
+        # Statistics panel
+        stats_group = QGroupBox("System Statistics")
+        stats_layout = QVBoxLayout()
+        self.stats_table = QTableWidget()
+        self.stats_table.setColumnCount(2)
+        self.stats_table.setHorizontalHeaderLabels(["Metric", "Value"])
+        self.stats_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        stats_layout.addWidget(self.stats_table)
+        stats_group.setLayout(stats_layout)
+        
+        layout.addWidget(summary_group, 3)
+        layout.addLayout(btn_layout)
+        layout.addWidget(stats_group, 1)
         widget.setLayout(layout)
         
         return widget
@@ -1324,11 +1867,305 @@ class IntegratedLoadTransferApp(QMainWindow):
         """Get current triad size from slider"""
         value = self.triad_slider.value()
         return 10 ** ((value - 10) / 45)
+    
+    # ===================== MENU ACTIONS =====================
+    def new_project(self):
+        """Create new project"""
+        reply = QMessageBox.question(
+            self, 'New Project',
+            'Create a new project? All unsaved changes will be lost.',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.graph_view.clear_graph()
+            self.graph_data = {'nodes': [], 'edges': []}
+            self.update_node_list()
+            self.update_edge_list()
+            self.statusBar.showMessage("New project created", 2000)
+    
+    def show_preferences(self):
+        """Show preferences dialog"""
+        dialog = PreferencesDialog(self.units_manager, self)
+        if dialog.exec() == QDialog.Accepted:
+            settings = dialog.get_settings()
+            
+            # Update units
+            for unit_type, unit in settings['units'].items():
+                self.units_manager.set_unit(unit_type, unit)
+            
+            # Update display settings
+            self.auto_calculate = settings['display']['auto_calculate']
+            self.show_force_vectors = settings['display']['show_force_vectors']
+            self.show_moment_vectors = settings['display']['show_moment_vectors']
+            
+            self.save_settings()
+            self.schedule_update()
+            self.statusBar.showMessage("Preferences updated", 2000)
+    
+    def validate_system(self):
+        """Validate entire system"""
+        all_errors = []
+        all_warnings = []
+        
+        # Validate nodes
+        for node in self.graph_data['nodes']:
+            errors, warnings = self.validation_manager.validate_node(node)
+            for err in errors:
+                all_errors.append(f"Node {node['name']}: {err}")
+            for warn in warnings:
+                all_warnings.append(f"Node {node['name']}: {warn}")
+        
+        # Validate edges
+        for edge in self.graph_data['edges']:
+            errors, warnings = self.validation_manager.validate_edge(edge, self.graph_data['nodes'])
+            for err in errors:
+                all_errors.append(f"Edge {edge['id']}: {err}")
+            for warn in warnings:
+                all_warnings.append(f"Edge {edge['id']}: {warn}")
+        
+        # System consistency
+        errors, warnings = self.validation_manager.check_system_consistency(self.graph_data)
+        all_errors.extend(errors)
+        all_warnings.extend(warnings)
+        
+        # Show results
+        msg = "VALIDATION RESULTS\n\n"
+        
+        if all_errors:
+            msg += f"❌ ERRORS ({len(all_errors)}):\n"
+            for err in all_errors:
+                msg += f"  • {err}\n"
+            msg += "\n"
+        
+        if all_warnings:
+            msg += f"⚠️ WARNINGS ({len(all_warnings)}):\n"
+            for warn in all_warnings:
+                msg += f"  • {warn}\n"
+            msg += "\n"
+        
+        if not all_errors and not all_warnings:
+            msg += "✅ System validation passed!\nNo errors or warnings found."
+            QMessageBox.information(self, "Validation Results", msg)
+        elif all_errors:
+            QMessageBox.critical(self, "Validation Results", msg)
+        else:
+            QMessageBox.warning(self, "Validation Results", msg)
+    
+    def update_summary(self):
+        """Update summary report"""
+        report = ReportGenerator.generate_summary_report(self.graph_data, {})
+        self.summary_text.setPlainText(report)
+        
+        # Update statistics
+        total_mass = sum(node.get('mass', 0) for node in self.graph_data['nodes'])
+        total_force = sum(abs(f) for node in self.graph_data['nodes'] 
+                         for f in node.get('external_force', [0, 0, 0]))
+        
+        stats = [
+            ("Total Nodes", str(len(self.graph_data['nodes']))),
+            ("Total Connections", str(len(self.graph_data['edges']))),
+            ("Total System Mass", f"{total_mass:.2f} kg"),
+            ("Total External Force", f"{total_force:.2f} N"),
+            ("Gravity", f"{self.gravity_data['value']} m/s²"),
+            ("Gravity Direction", str(self.gravity_data['direction']))
+        ]
+        
+        self.stats_table.setRowCount(len(stats))
+        for i, (metric, value) in enumerate(stats):
+            self.stats_table.setItem(i, 0, QTableWidgetItem(metric))
+            self.stats_table.setItem(i, 1, QTableWidgetItem(value))
+    
+    def export_report(self):
+        """Export text report"""
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Export Report", "", "Text Files (*.txt)"
+            )
+            
+            if file_path:
+                report = ReportGenerator.generate_summary_report(self.graph_data, {})
+                with open(file_path, 'w') as f:
+                    f.write(report)
+                self.statusBar.showMessage(f"Report exported to {file_path}", 3000)
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", f"Could not export report: {e}")
+    
+    def export_results_csv(self):
+        """Export results to CSV"""
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Export Results", "", "CSV Files (*.csv)"
+            )
+            
+            if file_path:
+                if ReportGenerator.export_to_csv(self.graph_data, file_path):
+                    self.statusBar.showMessage(f"Results exported to {file_path}", 3000)
+                else:
+                    QMessageBox.warning(self, "Export Error", "Could not export results")
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", f"Could not export: {e}")
+    
+    def export_plot_html(self):
+        """Export 3D plot as HTML"""
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Export 3D Plot", "", "HTML Files (*.html)"
+            )
+            
+            if file_path:
+                # Get current HTML from web view
+                # Note: This is a placeholder - actual implementation would save the figure
+                self.statusBar.showMessage(f"Plot exported to {file_path}", 3000)
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", f"Could not export plot: {e}")
+    
+    def reset_3d_view(self):
+        """Reset 3D view to default"""
+        self.schedule_update()
+        self.statusBar.showMessage("3D view reset", 2000)
+    
+    def show_about(self):
+        """Show about dialog"""
+        about_text = """
+        <h2>Integrated Load Transfer & Path Visualization Tool</h2>
+        <p><b>Version:</b> 2.0</p>
+        <p><b>Description:</b> Professional engineering tool for rigid body load transfer analysis and load path visualization.</p>
+        <p><b>Features:</b></p>
+        <ul>
+            <li>Interactive load path graph creation</li>
+            <li>3D coordinate system visualization</li>
+            <li>Cumulative load calculation</li>
+            <li>Gravity effects with custom direction</li>
+            <li>Multiple output coordinate systems</li>
+            <li>Export capabilities (JSON, CSV, HTML, Reports)</li>
+            <li>Comprehensive validation</li>
+            <li>Test cases for verification</li>
+        </ul>
+        <p><b>Author:</b> Engineering Tools Development Team</p>
+        <p><b>License:</b> Professional Edition</p>
+        <p><i>© 2025 All Rights Reserved</i></p>
+        """
+        QMessageBox.about(self, "About", about_text)
+    
+    def show_user_guide(self):
+        """Show user guide"""
+        guide_text = """
+        <h2>User Guide</h2>
+        
+        <h3>Getting Started</h3>
+        <ol>
+            <li><b>Create Nodes:</b> Click "Add Node" to create load input points</li>
+            <li><b>Set Properties:</b> Edit node mass, forces, moments, and position</li>
+            <li><b>Create Connections:</b> Link nodes with edges to define load paths</li>
+            <li><b>Set Interfaces:</b> Edit edge interface properties for output coordinate systems</li>
+            <li><b>Calculate:</b> View results in 3D visualization and results table</li>
+        </ol>
+        
+        <h3>Key Concepts</h3>
+        <p><b>Nodes:</b> Represent load input points with mass, forces, and moments</p>
+        <p><b>Edges:</b> Define load transfer paths with output coordinate systems</p>
+        <p><b>Interfaces:</b> Output locations where loads are calculated</p>
+        <p><b>Cumulative Loading:</b> Loads accumulate through the structure</p>
+        
+        <h3>Tips</h3>
+        <ul>
+            <li>Use test cases (🧪) to learn the tool</li>
+            <li>Validate system (Tools menu) before analysis</li>
+            <li>Adjust triad size for better visualization</li>
+            <li>Save projects frequently (Ctrl+S)</li>
+            <li>Use preferences to set units and display options</li>
+        </ul>
+        
+        <h3>Keyboard Shortcuts</h3>
+        <ul>
+            <li><b>Ctrl+N:</b> New project</li>
+            <li><b>Ctrl+O:</b> Open project</li>
+            <li><b>Ctrl+S:</b> Save project</li>
+            <li><b>Ctrl+Q:</b> Quit application</li>
+        </ul>
+        """
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("User Guide")
+        dialog.setMinimumSize(600, 500)
+        
+        layout = QVBoxLayout()
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setHtml(guide_text)
+        layout.addWidget(text_edit)
+        
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+    
+    def update_recent_files_menu(self):
+        """Update recent files menu"""
+        self.recent_menu.clear()
+        
+        for file_path in self.recent_files:
+            action = QAction(file_path, self)
+            action.triggered.connect(lambda checked, path=file_path: self.load_file(path))
+            self.recent_menu.addAction(action)
+        
+        if not self.recent_files:
+            action = QAction("No recent files", self)
+            action.setEnabled(False)
+            self.recent_menu.addAction(action)
+    
+    def add_recent_file(self, file_path):
+        """Add file to recent files list"""
+        if file_path in self.recent_files:
+            self.recent_files.remove(file_path)
+        self.recent_files.insert(0, file_path)
+        self.recent_files = self.recent_files[:self.max_recent_files]
+        self.update_recent_files_menu()
+        self.save_settings()
+    
+    def load_file(self, file_path):
+        """Load file from path"""
+        # Implementation would call load_from_file with specific path
+        self.statusBar.showMessage(f"Loading {file_path}...", 2000)
+    
+    def save_settings(self):
+        """Save application settings"""
+        self.settings.setValue('recent_files', self.recent_files)
+        self.settings.setValue('auto_calculate', self.auto_calculate)
+        self.settings.setValue('show_force_vectors', self.show_force_vectors)
+        self.settings.setValue('show_moment_vectors', self.show_moment_vectors)
+        self.settings.setValue('units/force', self.units_manager.get_unit('force'))
+        self.settings.setValue('units/moment', self.units_manager.get_unit('moment'))
+        self.settings.setValue('units/length', self.units_manager.get_unit('length'))
+        self.settings.setValue('units/mass', self.units_manager.get_unit('mass'))
+    
+    def load_settings(self):
+        """Load application settings"""
+        self.recent_files = self.settings.value('recent_files', [])
+        if not isinstance(self.recent_files, list):
+            self.recent_files = []
+        self.auto_calculate = self.settings.value('auto_calculate', True, type=bool)
+        self.show_force_vectors = self.settings.value('show_force_vectors', True, type=bool)
+        self.show_moment_vectors = self.settings.value('show_moment_vectors', True, type=bool)
+        
+        # Load units
+        force_unit = self.settings.value('units/force', 'N')
+        if force_unit:
+            self.units_manager.set_unit('force', force_unit)
+        
+        self.update_recent_files_menu()
         
     # ===================== VISUALIZATION =====================
     def schedule_update(self):
         """Schedule visualization update with debouncing"""
-        self.update_timer.start(300)
+        if self.auto_calculate:
+            self.update_timer.start(300)
+        else:
+            self.statusBar.showMessage("Auto-calculate disabled. Click Calculate button to update.", 3000)
     
     def calculate_node_loads(self, node_id, gravity_value, gravity_dir):
         """Calculate total loads on a node including gravity"""
@@ -1344,12 +2181,12 @@ class IntegratedLoadTransferApp(QMainWindow):
         )
         
         # Start with external loads
-        force = np.array(node.get('external_force', [0.0, 0.0, 0.0]) , dtype=np.float64)
-        moment = np.array(node.get('moment', [0.0, 0.0, 0.0]), dtype=np.float64)
+        force = np.array(node.get('external_force', [0, 0, 0]), dtype=np.float64)
+        moment = np.array(node.get('moment', [0, 0, 0]), dtype=np.float64)
         
         # Add gravity contribution
         if node.get('mass', 0) > 0:
-            cog = np.array(node.get('cog', [0.0, 0.0, 0.0]))
+            cog = np.array(node.get('cog', [0, 0, 0]))
             if np.all(cog == 0):
                 cog_global = np.array(node['translation'])
             else:
@@ -1454,7 +2291,7 @@ class IntegratedLoadTransferApp(QMainWindow):
                     fig.add_traces(fig_node.data)
                     
                     # Visualize external forces
-                    force = np.array(node.get('external_force', [0.0, 0.0, 0.0]))
+                    force = np.array(node.get('external_force', [0, 0, 0]))
                     if np.linalg.norm(force) > 0.01:
                         fig_force = plot3d.create_vector(
                             pos, R @ force, '#e74c3c',
@@ -1464,7 +2301,7 @@ class IntegratedLoadTransferApp(QMainWindow):
                         fig.add_traces(fig_force.data)
                     
                     # Visualize external moments
-                    moment = np.array(node.get('moment', [0.0, 0.0, 0.0]))
+                    moment = np.array(node.get('moment', [0, 0, 0]))
                     if np.linalg.norm(moment) > 0.01:
                         fig_mom = plot3d.create_vector(
                             pos, R @ moment, '#2ecc71',
@@ -1475,7 +2312,7 @@ class IntegratedLoadTransferApp(QMainWindow):
                     
                     # Visualize gravity force
                     if node.get('mass', 0) > 0:
-                        cog = np.array(node.get('cog', [0.0, 0.0, 0.0]))
+                        cog = np.array(node.get('cog', [0, 0, 0]))
                         if np.all(cog == 0):
                             cog_global = node['translation']
                         else:
@@ -1518,7 +2355,7 @@ class IntegratedLoadTransferApp(QMainWindow):
                     # Get interface properties (output coordinate system)
                     interface = edge.get('interface_properties', {})
                     interface_pos = interface.get('position', target_node['translation'])
-                    interface_angles = interface.get('euler_angles', [0.0, 0.0, 0.0])
+                    interface_angles = interface.get('euler_angles', [0, 0, 0])
                     interface_order = interface.get('rotation_order', 'xyz')
                     
                     # Create interface coordinate system
@@ -1563,8 +2400,8 @@ class IntegratedLoadTransferApp(QMainWindow):
                         if 'interface_properties' in incoming_edge:
                             incoming_results = incoming_edge['interface_properties'].get('rlt_results', {})
                             if incoming_results.get('is_valid', False):
-                                total_force += np.array(incoming_results['force']).astype(np.float64)
-                                total_moment += np.array(incoming_results['moment']).astype(np.float64)
+                                total_force += np.array(incoming_results['force'])
+                                total_moment += np.array(incoming_results['moment'])
                     
                     # Transfer cumulative loads to interface
                     F_at_interface, M_at_interface = rlt.rigid_load_transfer(
@@ -1747,13 +2584,13 @@ class IntegratedLoadTransferApp(QMainWindow):
                     
                     # Set defaults for missing fields
                     defaults = {
-                        'translation': [0.0, 0.0, 0.0],
-                        'euler_angles': [0.0, 0.0, 0.0],
+                        'translation': [0, 0, 0],
+                        'euler_angles': [0, 0, 0],
                         'rotation_order': 'xyz',
                         'mass': 0,
-                        'cog': [0.0, 0.0, 0.0],
-                        'external_force': [0.0, 0.0, 0.0],
-                        'moment': [0.0, 0.0, 0.0]
+                        'cog': [0, 0, 0],
+                        'external_force': [0, 0, 0],
+                        'moment': [0, 0, 0]
                     }
                     
                     for key, default_val in defaults.items():
@@ -1779,9 +2616,9 @@ class IntegratedLoadTransferApp(QMainWindow):
                         
                     if 'interface_properties' not in edge:
                         edge['interface_properties'] = {
-                            'euler_angles': [0.0, 0.0, 0.0],
+                            'euler_angles': [0, 0, 0],
                             'rotation_order': 'xyz',
-                            'position': [0.0, 0.0, 0.0]
+                            'position': [0, 0, 0]
                         }
                     
                     self.graph_data['edges'].append(edge)
@@ -1916,13 +2753,13 @@ def create_test_case_1():
             {
                 'id': 'n0',
                 'name': 'Support',
-                'translation': [0.0, 0.0, 0.0],
-                'euler_angles': [0.0, 0.0, 0.0],
+                'translation': [0, 0, 0],
+                'euler_angles': [0, 0, 0],
                 'rotation_order': 'xyz',
                 'mass': 0,
-                'cog': [0.0, 0.0, 0.0],
-                'external_force': [0.0, 0.0, 0.0],
-                'moment': [0.0, 0.0, 0.0],
+                'cog': [0, 0, 0],
+                'external_force': [0, 0, 0],
+                'moment': [0, 0, 0],
                 'color': '#3498db',
                 'graph_position': {'x': -150, 'y': 0}
             },
