@@ -2283,8 +2283,8 @@ class IntegratedLoadTransferApp(QMainWindow):
                         np.radians(node['euler_angles']),
                         node['rotation_order'],
                         node['translation'],
-                        tip_size=0.5 * triad_size,
-                        len_triad=triad_size,
+                        tip_size=0.1 * triad_size,
+                        len_triad=1.1 * triad_size,
                         colors_arr=color,
                         triad_name=f"{node['name']}"
                     )
@@ -2370,8 +2370,8 @@ class IntegratedLoadTransferApp(QMainWindow):
                         np.radians(interface_angles),
                         interface_order,
                         interface_pos,
-                        tip_size=0.4 * triad_size,
-                        len_triad=0.8 * triad_size,
+                        tip_size=0.1 * triad_size,
+                        len_triad=1.0 * triad_size,
                         colors_arr='#f39c12',
                         triad_name=f"{edge['id']}:Output"
                     )
